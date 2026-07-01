@@ -102,10 +102,10 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "FileDescription", "rus1scan Application"
+            VALUE "FileDescription", "rus1scan app"
             VALUE "FileVersion", "4, 0, 0, 1"
             VALUE "InternalName", "rus1scan"
-            VALUE "LegalCopyright", "Copyright (C) alabuga.dev 2009-2024"
+            VALUE "LegalCopyright", "Copyright (C) sborka.dev 2009-2026"
             VALUE "OriginalFilename", "rus1scan.exe"
             VALUE "ProductName", "rus1scan"
             VALUE "ProductVersion", "4, 0, 0, 1"
@@ -196,7 +196,7 @@ BEGIN
     "#pragma code_page(1252)\r\n"
     "#endif\r\n"
     "#include ""res\\rus1scan.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
-    "#include ""afxres.rc""         // Standard components\r\n"
+    "#include ""afxres.rc""          // Standard components\r\n"
     "#endif\0"
 END
 
