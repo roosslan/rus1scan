@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Source Files">
@@ -7,135 +7,68 @@
     </Filter>
     <Filter Include="Header Files">
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
     <Filter Include="Resource Files">
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav</Extensions>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="Header Files\WIA">
-      <UniqueIdentifier>{056a447f-d986-45b0-a4e2-241286cd30de}</UniqueIdentifier>
+    <Filter Include="WiaWrap">
+      <UniqueIdentifier>{0B4C2D8E-3F1A-4B7C-9E2D-5A6F7C8D9E01}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\WIA">
-      <UniqueIdentifier>{9768dff2-7a6b-4e1a-9ce0-50da91604cb5}</UniqueIdentifier>
+    <Filter Include="litePDF">
+      <UniqueIdentifier>{1C5D3E9F-4A2B-4C8D-8F3E-6B7A8D9E0F12}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="rus1scan_service.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="rus1scan_window.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="boost_logger.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="rus1scan.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="helper_funcs.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="prn_stream.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="share\litePDF.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="image_print.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="BitmapUtil.cpp">
-      <Filter>Source Files\WIA</Filter>
-    </ClCompile>
-    <ClCompile Include="DataCallback.cpp">
-      <Filter>Source Files\WIA</Filter>
-    </ClCompile>
-    <ClCompile Include="EventCallback.cpp">
-      <Filter>Source Files\WIA</Filter>
-    </ClCompile>
-    <ClCompile Include="ProgressDlg.cpp">
-      <Filter>Source Files\WIA</Filter>
-    </ClCompile>
-    <ClCompile Include="WiaDataCallback.cpp">
-      <Filter>Source Files\WIA</Filter>
-    </ClCompile>
-    <ClCompile Include="WiaWrap.cpp">
-      <Filter>Source Files\WIA</Filter>
-    </ClCompile>
+    <ClCompile Include="actions.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="config.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="EventCallback.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="logger.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="rus1scan.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="rus1scanService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="rus1scanWindow.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="service_core.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="StdAfx.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="strutil.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="toml_lite.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="BitmapUtil.cpp"><Filter>WiaWrap</Filter></ClCompile>
+    <ClCompile Include="DataCallback.cpp"><Filter>WiaWrap</Filter></ClCompile>
+    <ClCompile Include="wia_names.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="WiaWrap.cpp"><Filter>WiaWrap</Filter></ClCompile>
+    <ClCompile Include="share\litePDF.cpp"><Filter>litePDF</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="rus1scan_service.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="rus1scan_window.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="stdafx.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="resource.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="boost_logger.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="rus1scan.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="helper_funcs.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="prn_stream.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="share\litePDF.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="image_print.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="BitmapUtil.h">
-      <Filter>Header Files\WIA</Filter>
-    </ClInclude>
-    <ClInclude Include="DataCallback.h">
-      <Filter>Header Files\WIA</Filter>
-    </ClInclude>
-    <ClInclude Include="EventCallback.h">
-      <Filter>Header Files\WIA</Filter>
-    </ClInclude>
-    <ClInclude Include="ProgressDlg.h">
-      <Filter>Header Files\WIA</Filter>
-    </ClInclude>
-    <ClInclude Include="WiaDataCallback.h">
-      <Filter>Header Files\WIA</Filter>
-    </ClInclude>
-    <ClInclude Include="WiaWrap.h">
-      <Filter>Header Files\WIA</Filter>
-    </ClInclude>
+    <ClInclude Include="actions.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="config.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="EventCallback.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="logger.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="resource.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="rus1scan.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="rus1scanService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="rus1scanWindow.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="service_core.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="stdafx.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="strutil.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="toml_lite.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="BitmapUtil.h"><Filter>WiaWrap</Filter></ClInclude>
+    <ClInclude Include="DataCallback.h"><Filter>WiaWrap</Filter></ClInclude>
+    <ClInclude Include="wia_names.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="WiaWrap.h"><Filter>WiaWrap</Filter></ClInclude>
+    <ClInclude Include="share\litePDF.h"><Filter>litePDF</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="rus1scan.rc">
-      <Filter>Resource Files</Filter>
-    </ResourceCompile>
+    <ResourceCompile Include="rus1scan.rc"><Filter>Resource Files</Filter></ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="res\rus1scan.rc2">
-      <Filter>Resource Files</Filter>
-    </None>
+    <None Include="res\rus1scan.rc2"><Filter>Resource Files</Filter></None>
+    <None Include="rus1scan.toml" />
+    <None Include="wia_names_table.inc" />
+    <None Include="tools\gen_wia_names.py" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="res\rus1scan.ico">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="res\rus1scan.ico">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="logosetup.bmp">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="res\rus1scan4.ico">
-      <Filter>Resource Files</Filter>
-    </Image>
+    <Image Include="logosetup.bmp"><Filter>Resource Files</Filter></Image>
+    <Image Include="res\rus1scan.ico"><Filter>Resource Files</Filter></Image>
+    <Image Include="res\rus1scan4.ico"><Filter>Resource Files</Filter></Image>
   </ItemGroup>
 </Project>

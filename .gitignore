@@ -1,0 +1,17 @@
+# Результаты сборки
+Debug/
+Release/
+obj/
+*.aps
+*.vcxproj.user
+.vs/
+
+# Журналы программы
+logs/
+
+# Архивы и резервные копии
+*.rar
+_backup_*/
+
+# Библиотеки Boost больше не используются
+lib/libboost_*.lib

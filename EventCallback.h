@@ -1,56 +1,46 @@
-/*++
-
-Copyright (c) Microsoft Corporation. All rights reserved.
-
---*/
+// EventCallback.h: приёмник событий WIA (нажатия кнопок сканера, подключение/отключение
+// устройств), регистрируемый во время работы через IWiaDevMgr::RegisterEventCallbackInterface.
 
 #ifndef __EVENTCALLBACK__
 #define __EVENTCALLBACK__
 
+#include <functional>
+#include <string>
+#include <vector>
+
+// Данные пришедшего события WIA (копия параметров ImageEventCallback).
+struct WiaEventNotification
+{
+    GUID         eventGuid = GUID_NULL;
+    std::wstring eventGuidText;         // "{...}"
+    std::wstring eventDescription;
+    std::wstring deviceId;
+    std::wstring deviceDescription;
+    std::wstring fullItemName;          // Элемент, к которому относится событие (часто пусто)
+    DWORD        deviceType = 0;
+    ULONG        eventType = 0;         // WIA_NOTIFICATION_EVENT / WIA_ACTION_EVENT
+};
+
+// Обработчик событий. Вызывается в потоке RPC службы WIA - не должен выполнять
+// долгих операций (сканирование), только поставить событие в очередь.
+using WiaEventHandler = std::function<void(const WiaEventNotification&)>;
+
 namespace WiaWrap
 {
-
-//////////////////////////////////////////////////////////////////////////
-// CEventCallback
-
-/*++
-
-    CEventCallback implements a WIA event callback object that maintains 
-    the count of WIA devices on the system. Upon initialization, the object 
-    gets the current number of WIA devices on the system and registers itself 
-    for the connect and disconnect events, so when new devices are added or
-    removed from the system, the object maintains the current device count.
-
-Methods
-
-    CEventCallback
-        Initializes the object
-
-    ImageEventCallback
-        This method is called when a connect or disconnect event occurs.
-        In either case, this method queries the current device count.
-
-    Register
-        Sets the initial device count and register for the connect and 
-        disconnect events.
-
-    GetNumDevices
-        Returns the number of WIA devices on the system.
-
---*/
 
 class CEventCallback : public IWiaEventCallback
 {
 public:
-    CEventCallback();
+    // Создаёт приёмник событий (см. EventCallback.cpp).
+    explicit CEventCallback(WiaEventHandler handler);
 
-    // IUnknown interface
+    // IUnknown
 
     STDMETHOD(QueryInterface)(REFIID iid, LPVOID *ppvObj);
     STDMETHOD_(ULONG, AddRef)();
     STDMETHOD_(ULONG, Release)();
 
-    // IWiaEventCallback interface
+    // IWiaEventCallback
 
     STDMETHOD(ImageEventCallback)(
         LPCGUID pEventGuid,
@@ -63,26 +53,22 @@ public:
         ULONG   ulReserved
     );
 
-    // CEventCallback methods
+    // Регистрирует приёмник на указанные события всех устройств.
+    HRESULT Register(IWiaDevMgr* pWiaDevMgr, const std::vector<GUID>& events);
 
-    HRESULT Register();
+    // Отменяет все регистрации.
+    void Unregister();
 
-    ULONG GetNumDevices() const;
+    // Число успешных регистраций.
+    size_t RegisteredCount() const;
+
+protected:
+    ~CEventCallback() = default;    // Удаляется только через Release()
 
 private:
-    LONG               m_cRef;
-    ULONG              m_nNumDevices;
-    CComPtr<IUnknown>  m_pConnectEventObject;
-    CComPtr<IUnknown>  m_pDisconnectEventObject;
-    CComPtr<IUnknown>  m_pScanImageEventObject;
-    CComPtr<IUnknown>  m_pEMailEventObject;
-    CComPtr<IUnknown>  m_pCopyEventObject;
-    CComPtr<IUnknown>  m_pMultimediaEventObject;
-    CComPtr<IUnknown>  m_pFaxEventObject;
-    CComPtr<IUnknown>  m_pPDFEventObject;
-    CComPtr<IUnknown>  m_pScanFilmEventObject;
-
-    CComPtr<IUnknown>  m_pCustomEventObject;
+    LONG                           m_cRef;
+    WiaEventHandler                 m_handler;
+    std::vector<CComPtr<IUnknown>>  m_registrations;   // Освобождение объекта = отмена регистрации
 };
 
 }; // namespace WiaWrap

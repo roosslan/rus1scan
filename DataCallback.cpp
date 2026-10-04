@@ -2,10 +2,13 @@
 
 Copyright (c) Microsoft Corporation. All rights reserved.
 
+Основано на примере Microsoft "WiaWrap" (см. DataCallback.h).
+
 --*/
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "DataCallback.h"
+#include "BitmapUtil.h"
 
 namespace WiaWrap
 {
@@ -13,6 +16,15 @@ namespace WiaWrap
 //////////////////////////////////////////////////////////////////////////
 //
 // CDataCallback::CDataCallback
+//
+// Создаёт приёмник данных. Счётчик ссылок начинается с 0 - объект нужно сразу
+// поместить в CComPtr (или вызвать AddRef).
+//   pfnProgressCallback    - функция хода передачи; вызывается для каждого блока данных
+//                            и статуса, не может быть NULL;
+//   pProgressCallbackParam - параметр, передаваемый в pfnProgressCallback;
+//   plCount                - [out] число полученных страниц (должно быть 0 на входе);
+//   pppStream              - [out] массив IStream* с полученными страницами
+//                            (выделяется через CoTaskMemRealloc, на входе NULL).
 //
 
 CDataCallback::CDataCallback(
@@ -38,6 +50,11 @@ CDataCallback::CDataCallback(
 //////////////////////////////////////////////////////////////////////////
 //
 // CDataCallback::QueryInterface
+//
+// Стандартный IUnknown::QueryInterface: поддерживаются IUnknown и IWiaDataCallback.
+//   iid    - идентификатор запрашиваемого интерфейса;
+//   ppvObj - [out] указатель на интерфейс (с AddRef) или NULL.
+// Возвращает S_OK, E_NOINTERFACE или E_POINTER.
 //
 
 STDMETHODIMP CDataCallback::QueryInterface(REFIID iid, LPVOID *ppvObj)
@@ -69,6 +86,8 @@ STDMETHODIMP CDataCallback::QueryInterface(REFIID iid, LPVOID *ppvObj)
 //
 // CDataCallback::AddRef
 //
+// Увеличивает счётчик ссылок (потокобезопасно). Возвращает новое значение.
+//
 
 STDMETHODIMP_(ULONG) CDataCallback::AddRef()
 {
@@ -78,6 +97,8 @@ STDMETHODIMP_(ULONG) CDataCallback::AddRef()
 //////////////////////////////////////////////////////////////////////////
 //
 // CDataCallback::Release
+//
+// Уменьшает счётчик ссылок; при достижении 0 удаляет объект. Возвращает новое значение.
 //
 
 STDMETHODIMP_(ULONG) CDataCallback::Release()
@@ -96,6 +117,21 @@ STDMETHODIMP_(ULONG) CDataCallback::Release()
 //
 // CDataCallback::BandedDataCallback
 //
+// Вызывается WIA во время передачи idtGetBandedData.
+//   lReason          - причина вызова:
+//                      IT_MSG_DATA_HEADER - заголовок передачи (формат и, возможно, размер);
+//                      IT_MSG_DATA        - очередной блок данных (lOffset/lLength/pbBuffer);
+//                      IT_MSG_STATUS      - только статус и процент выполнения;
+//                      IT_MSG_NEW_PAGE / IT_MSG_TERMINATION - страница/передача завершена;
+//   lStatus          - статус устройства (IT_STATUS_...);
+//   lPercentComplete - процент выполнения;
+//   lOffset          - смещение блока данных в изображении;
+//   lLength          - длина блока данных;
+//   lReserved        - зарезервировано;
+//   lResLength       - зарезервировано;
+//   pbBuffer         - данные блока (или WIA_DATA_CALLBACK_HEADER для IT_MSG_DATA_HEADER).
+// Возвращает S_OK для продолжения, S_FALSE для отмены или код ошибки.
+//
 
 STDMETHODIMP CDataCallback::BandedDataCallback(
     LONG   lReason,
@@ -108,9 +144,10 @@ STDMETHODIMP CDataCallback::BandedDataCallback(
     PBYTE  pbBuffer
 )
 {
-    HRESULT hr;
+    UNREFERENCED_PARAMETER(lReserved);
+    UNREFERENCED_PARAMETER(lResLength);
 
-    // Parse the message
+    HRESULT hr;
 
     switch (lReason)
     {
@@ -118,18 +155,23 @@ STDMETHODIMP CDataCallback::BandedDataCallback(
         {
             PWIA_DATA_CALLBACK_HEADER pHeader = (PWIA_DATA_CALLBACK_HEADER) pbBuffer;
 
-            // Determine if this is a BMP transfer
+            if (pHeader == NULL)
+            {
+                return E_POINTER;
+            }
 
-			m_bBMP = pHeader->guidFormatID == WiaImgFmt_MEMORYBMP || pHeader->guidFormatID == WiaImgFmt_BMP;
+            // Это передача BMP?
 
-            // For WiaImgFmt_MEMORYBMP transfers, WIA does not send a BITMAPFILEHEADER before the data.
-            // In this program, we desire all BMP files to contain a BITMAPFILEHEADER, so add it manually
+            m_bBMP = pHeader->guidFormatID == WiaImgFmt_MEMORYBMP || pHeader->guidFormatID == WiaImgFmt_BMP;
+
+            // Для WiaImgFmt_MEMORYBMP WIA не передаёт BITMAPFILEHEADER - резервируем
+            // под него место в начале буфера и заполним в конце страницы.
 
             m_nHeaderSize = pHeader->guidFormatID == WiaImgFmt_MEMORYBMP ? sizeof(BITMAPFILEHEADER) : 0;
 
-            // Allocate memory for the image if the size is given in the header
+            // Если размер изображения известен заранее - сразу выделяем буфер
 
-            if (pHeader != NULL && pHeader->lBufferSize != 0)
+            if (pHeader->lBufferSize != 0)
             {
                 hr = ReAllocBuffer(m_nHeaderSize + pHeader->lBufferSize);
 
@@ -138,14 +180,12 @@ STDMETHODIMP CDataCallback::BandedDataCallback(
                     return hr;
                 }
             }
-        
+
             break;
         }
 
         case IT_MSG_DATA:
         {
-            // Invoke the callback function
-
             hr = m_pfnProgressCallback(lStatus, lPercentComplete, m_pProgressCallbackParam);
 
             if (FAILED(hr) || hr == S_FALSE)
@@ -153,9 +193,8 @@ STDMETHODIMP CDataCallback::BandedDataCallback(
                 return hr;
             }
 
-            // If the buffer is not allocated yet and this is the first block, 
-            // and the transferred image is in BMP format, allocate the buffer
-            // according to the size information in the bitmap header
+            // Первый блок BMP без заранее выделенного буфера: размер берём
+            // из заголовка DIB в самом блоке.
 
             if (m_pStream == NULL && lOffset == 0 && m_bBMP)
             {
@@ -172,7 +211,7 @@ STDMETHODIMP CDataCallback::BandedDataCallback(
                 }
             }
 
-            // If the transfer goes past the buffer, try to expand it
+            // Если блок выходит за пределы буфера - расширяем буфер
 
             if (m_nHeaderSize + lOffset + lLength > m_nDataSize)
             {
@@ -183,8 +222,6 @@ STDMETHODIMP CDataCallback::BandedDataCallback(
                     return hr;
                 }
             }
-
-            // copy the transfer buffer
 
             hr = CopyToBuffer(m_nHeaderSize + lOffset, pbBuffer, lLength);
 
@@ -198,8 +235,6 @@ STDMETHODIMP CDataCallback::BandedDataCallback(
 
         case IT_MSG_STATUS:
         {
-            // Invoke the callback function
-
             hr = m_pfnProgressCallback(lStatus, lPercentComplete, m_pProgressCallbackParam);
 
             if (FAILED(hr) || hr == S_FALSE)
@@ -215,13 +250,10 @@ STDMETHODIMP CDataCallback::BandedDataCallback(
         {
             if (m_pStream != NULL)
             {
-                // For BMP files, we should validate the the image header
-                // So, obtain the memory buffer from the stream
-
                 if (m_bBMP)
                 {
-                    // Since the stream is created using CreateStreamOnHGlobal,
-                    // we can get the memory buffer with GetHGlobalFromStream.
+                    // Поток создан через CreateStreamOnHGlobal, поэтому его память
+                    // можно получить через GetHGlobalFromStream и поправить заголовок на месте.
 
                     HGLOBAL hBuffer;
 
@@ -239,15 +271,12 @@ STDMETHODIMP CDataCallback::BandedDataCallback(
                         return HRESULT_FROM_WIN32(GetLastError());
                     }
 
-                    // Some scroll-fed scanners may return 0 as the bitmap height
-                    // In this case, calculate the image height and modify the header
+                    // Протяжные сканеры могут передать высоту 0 - вычисляем её
 
                     BitmapUtil::FixBitmapHeight(pBuffer + 1, m_nDataSize, TRUE);
 
-                    // For WiaImgFmt_MEMORYBMP transfers, the WIA service does not 
-                    // include a BITMAPFILEHEADER preceeding the bitmap data. 
-                    // In this case, fill in the BITMAPFILEHEADER structure.
-        
+                    // Для WiaImgFmt_MEMORYBMP заполняем зарезервированный BITMAPFILEHEADER
+
                     if (m_nHeaderSize != 0)
                     {
                         BitmapUtil::FillBitmapFileHeader(pBuffer + 1, pBuffer);
@@ -256,10 +285,10 @@ STDMETHODIMP CDataCallback::BandedDataCallback(
                     GlobalUnlock(hBuffer);
                 }
 
-                // Store this buffer in the successfully transferred images array
+                // Сохраняем страницу в массив готовых изображений
 
-				hr = StoreBuffer();
-                
+                hr = StoreBuffer();
+
                 if (FAILED(hr))
                 {
                     return hr;
@@ -277,12 +306,14 @@ STDMETHODIMP CDataCallback::BandedDataCallback(
 //
 // CDataCallback::ReAllocBuffer
 //
+// Устанавливает размер буфера текущей страницы; при первом вызове создаёт поток в памяти.
+//   nSize - новый размер буфера в байтах.
+// Возвращает S_OK или код ошибки.
+//
 
 HRESULT CDataCallback::ReAllocBuffer(ULONG nSize)
 {
     HRESULT hr;
-
-    // If m_pStream is not initialized yet, create a new stream object
 
     if (m_pStream == 0)
     {
@@ -293,8 +324,6 @@ HRESULT CDataCallback::ReAllocBuffer(ULONG nSize)
             return hr;
         }
     }
-
-    // Next, set the size of the stream object
 
     ULARGE_INTEGER liSize = { nSize };
 
@@ -314,12 +343,16 @@ HRESULT CDataCallback::ReAllocBuffer(ULONG nSize)
 //
 // CDataCallback::CopyToBuffer
 //
+// Записывает блок данных в буфер текущей страницы по указанному смещению.
+//   nOffset - смещение в буфере;
+//   pBuffer - данные;
+//   nSize   - размер данных в байтах.
+// Возвращает S_OK или код ошибки.
+//
 
 HRESULT CDataCallback::CopyToBuffer(ULONG nOffset, LPCVOID pBuffer, ULONG nSize)
 {
     HRESULT hr;
-
-    // First move the stream pointer to the data offset
 
     LARGE_INTEGER liOffset = { nOffset };
 
@@ -329,8 +362,6 @@ HRESULT CDataCallback::CopyToBuffer(ULONG nOffset, LPCVOID pBuffer, ULONG nSize)
     {
         return hr;
     }
-
-    // Next, write the new data to the stream
 
     hr = m_pStream->Write(pBuffer, nSize, 0);
 
@@ -342,20 +373,21 @@ HRESULT CDataCallback::CopyToBuffer(ULONG nOffset, LPCVOID pBuffer, ULONG nSize)
     return S_OK;
 }
 
-
 //////////////////////////////////////////////////////////////////////////
 //
 // CDataCallback::StoreBuffer
 //
+// Добавляет готовую страницу в выходной массив (*m_pppStream, *m_plCount) и
+// сбрасывает буфер, чтобы следующая страница начиналась с нового потока.
+// Возвращает S_OK или E_OUTOFMEMORY.
+//
 
 HRESULT CDataCallback::StoreBuffer()
 {
-    // Increase the successfully transferred buffers array size
-
     IStream **ppStream = (IStream **) CoTaskMemRealloc(
-		*m_pppStream, 
-		(*m_plCount + 1) * sizeof(IStream *)
-	);
+        *m_pppStream,
+        (*m_plCount + 1) * sizeof(IStream *)
+    );
 
     if (ppStream == NULL)
     {
@@ -364,20 +396,20 @@ HRESULT CDataCallback::StoreBuffer()
 
     *m_pppStream = ppStream;
 
-    // Rewind the current buffer
+    // Перематываем поток в начало
 
     LARGE_INTEGER liZero = { 0 };
 
     m_pStream->Seek(liZero, STREAM_SEEK_SET, 0);
 
-    // Store the current buffer as the last successfully transferred buffer
+    // Кладём поток последним элементом массива
 
-	(*m_pppStream)[*m_plCount] = m_pStream;
+    (*m_pppStream)[*m_plCount] = m_pStream;
     (*m_pppStream)[*m_plCount]->AddRef();
 
     *m_plCount += 1;
 
-    // Reset the current buffer
+    // Следующая страница начнётся с нового потока
 
     m_pStream.Release();
 

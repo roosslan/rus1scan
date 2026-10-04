@@ -1,8 +1,7 @@
 //{{NO_DEPENDENCIES}}
-// Включаемый файл, созданный в Microsoft Visual C++.
-// Используется rus1scan.rc
+// Microsoft Visual C++ generated include file.
+// Used by rus1scan.rc
 //
-#define IDS_SAVEDIR_EDIT				"Formatted using std::put_time function"
 #define IDS_WAIT                        4
 #define IDS_STATUS_TRANSFER_FROM_DEVICE 5
 #define IDS_STATUS_PROCESSING_DATA      6
@@ -41,16 +40,18 @@
 #define IDC_COMBO_PRINTER               11023
 #define IDC_EDIT1                       11024
 #define IDC_DATFORMAT                   11024
+#define IDC_CHECK_PDF                   11025
+#define IDC_CHECK_SHOW_DISCONNECTED     11026
 #define ID_FILE_FROM_SCANNER_OR_CAMERA  40001
 #define ID_FILE_EXIT                    40002
 
 // Next default values for new objects
-// 
+//
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        1334
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         11025
+#define _APS_NEXT_CONTROL_VALUE         11027
 #define _APS_NEXT_SYMED_VALUE           1201
 #endif
 #endif

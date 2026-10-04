@@ -1,0 +1,43 @@
+# rus1scan.toml - глобальный конфиг rus1scan (кодировка UTF-8).
+# Файл перезаписывается окном настроек (двойной клик по rus1scan.exe),
+# комментарии, добавленные вручную, при этом не сохраняются.
+# Служба rus1scan перечитывает файл автоматически после каждого изменения.
+#
+# [common]
+#   filePrefix - префикс имён файлов сканов (далее дата_время и номер страницы).
+#
+# [gui]
+#   showDisconnectedDevices - показывать в окне настроек отключённые устройства.
+#
+# [wia] - WIA-свойства, выставляемые перед каждым сканированием: ИМЯ = значение.
+#   ИМЯ - любой параметр из WIA_CONSTANTS.TXT.H (WIA_IPS_XRES), его отображаемое имя
+#   ("Horizontal Resolution") или номер (6147).
+#   Значение - число, true/false или строка: константа WIA ('WIA_INTENT_IMAGE_TYPE_COLOR'),
+#   несколько констант ('FEEDER|DUPLEX'), дробное число ('8.5'), GUID/формат ('WiaImgFmt_BMP')
+#   или текст для строковых свойств. Примеры:
+#     WIA_IPS_XRES = 300
+#     WIA_IPS_YRES = 300
+#     WIA_IPA_DATATYPE = 'WIA_DATA_COLOR'          # WIA_DATA_GRAYSCALE, WIA_DATA_THRESHOLD
+#     WIA_DPS_DOCUMENT_HANDLING_SELECT = 'FEEDER'  # 'FLATBED', 'FEEDER|DUPLEX'
+#   Если задано разрешение, а область (WIA_IPS_XEXTENT/YEXTENT) нет - сканируется всё стекло.
+#   WIA_IPA_FORMAT и WIA_IPA_TYMED задаёт сама программа.
+#
+# [[binding]] - привязка кнопки/события сканера к действию (по одной на событие):
+#   deviceId   - WIA ID устройства; '' = любое устройство;
+#   eventGuid  - GUID события WIA; eventFlags: 1 = уведомление, 2 = действие, 3 = оба;
+#   action     - nothing | save | print | start;
+#   folder     - шаблон папки для save/start: %d %m %Y %y %H %M %S (дата/время);
+#   pdf        - true: сохранять все страницы в один PDF, false: BMP-файлы;
+#   printer    - принтер для print ('' = принтер по умолчанию);
+#   program    - программа для start; %1 заменяется путём к файлу,
+#                без %1 путь добавляется в конец командной строки.
+
+[common]
+filePrefix = 'Сканирование_'
+
+[gui]
+showDisconnectedDevices = false
+
+[wia]
+WIA_IPS_XRES = 300
+WIA_IPS_YRES = 300
