@@ -11,6 +11,9 @@
 
 #include <fstream>
 #include <cmath>
+#include <gdiplus.h>
+
+#pragma comment(lib, "gdiplus.lib")
 
 namespace
 {
@@ -140,7 +143,7 @@ namespace
     // Подбирает несуществующее имя файла: folder\base.ext, затем folder\base_(2).ext и т.д.
     //   folder    - папка;
     //   base      - имя без расширения;
-    //   extension - расширение с точкой (".bmp", ".pdf").
+    //   extension - расширение с точкой (".gif", ".pdf").
     std::wstring MakeUniquePath(const std::wstring& folder, const std::wstring& base, const std::wstring& extension)
     {
         std::wstring path = folder + L"\\" + base + extension;
@@ -170,6 +173,117 @@ namespace
         if (!ok || written != data.size())
         {
             error = L"ошибка записи файла " + path + L" (ошибка " + std::to_wstring(code) + L")";
+            return false;
+        }
+        return true;
+    }
+
+    // Формирует имя файла страницы: <base> или <base>_pNN, если страниц несколько.
+    //   base  - базовое имя (префикс + дата_время);
+    //   index - номер страницы с 0;
+    //   count - всего страниц.
+    std::wstring PageFileName(const std::wstring& base, size_t index, size_t count)
+    {
+        if (count <= 1)
+        {
+            return base;
+        }
+        wchar_t page[16];
+        swprintf_s(page, L"_p%02u", static_cast<unsigned>(index + 1));
+        return base + page;
+    }
+
+    // Сеанс GDI+: инициализирует библиотеку в конструкторе и завершает в деструкторе.
+    // GDI+ используется только для записи GIF.
+    class GdiplusSession
+    {
+    public:
+        // Запускает GDI+ (GdiplusStartup).
+        GdiplusSession()
+        {
+            Gdiplus::GdiplusStartupInput input;
+            m_ok = Gdiplus::GdiplusStartup(&m_token, &input, NULL) == Gdiplus::Ok;
+        }
+
+        // Завершает GDI+ (GdiplusShutdown), если запуск был успешным.
+        ~GdiplusSession()
+        {
+            if (m_ok)
+            {
+                Gdiplus::GdiplusShutdown(m_token);
+            }
+        }
+
+        GdiplusSession(const GdiplusSession&) = delete;
+        GdiplusSession& operator=(const GdiplusSession&) = delete;
+
+        // Возвращает true, если GDI+ запущен.
+        bool Ok() const { return m_ok; }
+
+    private:
+        ULONG_PTR m_token = 0;
+        bool      m_ok = false;
+    };
+
+    // Находит CLSID кодировщика GDI+ по MIME-типу.
+    //   mimeType - MIME-тип, например L"image/gif";
+    //   clsid    - [out] CLSID кодировщика.
+    // Возвращает false, если кодировщик не найден.
+    bool GetEncoderClsid(const wchar_t* mimeType, CLSID& clsid)
+    {
+        UINT count = 0;
+        UINT size = 0;
+        if (Gdiplus::GetImageEncodersSize(&count, &size) != Gdiplus::Ok || size == 0)
+        {
+            return false;
+        }
+        std::vector<BYTE> buffer(size);
+        Gdiplus::ImageCodecInfo* codecs = reinterpret_cast<Gdiplus::ImageCodecInfo*>(buffer.data());
+        if (Gdiplus::GetImageEncoders(count, size, codecs) != Gdiplus::Ok)
+        {
+            return false;
+        }
+        for (UINT i = 0; i < count; ++i)
+        {
+            if (wcscmp(codecs[i].MimeType, mimeType) == 0)
+            {
+                clsid = codecs[i].Clsid;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Записывает страницу (BMP в памяти) в файл GIF через GDI+. Изображения с палитрой
+    // (ч/б, оттенки серого) сохраняются без потерь; полноцветные GDI+ сводит к палитре
+    // из 256 цветов с дизерингом - это ограничение самого формата GIF.
+    //   image - страница (полный .bmp в памяти);
+    //   path  - путь создаваемого файла;
+    //   clsid - CLSID кодировщика GIF;
+    //   error - [out] текст ошибки.
+    bool WriteGifFile(const ScannedImage& image, const std::wstring& path, const CLSID& clsid, std::wstring& error)
+    {
+        IStream* stream = SHCreateMemStream(image.bmp.data(), static_cast<UINT>(image.bmp.size()));
+        if (stream == NULL)
+        {
+            error = L"недостаточно памяти для преобразования в GIF";
+            return false;
+        }
+
+        Gdiplus::Status status;
+        {
+            Gdiplus::Bitmap bitmap(stream);
+            status = bitmap.GetLastStatus();
+            if (status == Gdiplus::Ok)
+            {
+                status = bitmap.Save(path.c_str(), &clsid, NULL);
+            }
+        }
+        stream->Release();
+
+        if (status != Gdiplus::Ok)
+        {
+            error = L"не удалось сохранить " + path + L" в GIF (код GDI+ " + std::to_wstring(status) + L")";
             return false;
         }
         return true;
@@ -276,9 +390,45 @@ namespace actions
         return true;
     }
 
-    // Сохраняет страницы как отдельные .bmp-файлы: <префикс><дата_время>[_pNN].bmp.
+    // Сохраняет страницы как отдельные .gif-файлы: <префикс><дата_время>[_pNN].gif.
     //   images - страницы;
-    //   folder - готовая (существующая) папка;
+    //   folder - готовая (существующая) директория;
+    //   prefix - префикс имени файла;
+    //   files  - [out] пути созданных файлов;
+    //   error  - [out] текст ошибки.
+    // Возвращает true, если сохранены все страницы.
+    bool SaveImagesAsGif(const std::vector<ScannedImage>& images, const std::wstring& folder,
+                         const std::wstring& prefix, std::vector<std::wstring>& files, std::wstring& error)
+    {
+        GdiplusSession gdiplus;
+        CLSID gifClsid;
+        if (!gdiplus.Ok() || !GetEncoderClsid(L"image/gif", gifClsid))
+        {
+            error = L"кодировщик GIF (GDI+) недоступен";
+            return false;
+        }
+
+        SYSTEMTIME now;
+        GetLocalTime(&now);
+        const std::wstring base = MakeBaseName(prefix, now);
+
+        for (size_t i = 0; i < images.size(); ++i)
+        {
+            const std::wstring path = MakeUniquePath(folder, PageFileName(base, i, images.size()), L".gif");
+            if (!WriteGifFile(images[i], path, gifClsid, error))
+            {
+                return false;
+            }
+            LOG_SAVE << "Saved " << path;
+            files.push_back(path);
+        }
+        return true;
+    }
+
+    // Сохраняет страницы как отдельные .bmp-файлы: <префикс><дата_время>[_pNN].bmp.
+    // Данные записываются как есть, без преобразования.
+    //   images - страницы;
+    //   folder - готовая (существующая) директория;
     //   prefix - префикс имени файла;
     //   files  - [out] пути созданных файлов;
     //   error  - [out] текст ошибки.
@@ -292,14 +442,7 @@ namespace actions
 
         for (size_t i = 0; i < images.size(); ++i)
         {
-            std::wstring name = base;
-            if (images.size() > 1)
-            {
-                wchar_t page[16];
-                swprintf_s(page, L"_p%02u", static_cast<unsigned>(i + 1));
-                name += page;
-            }
-            const std::wstring path = MakeUniquePath(folder, name, L".bmp");
+            const std::wstring path = MakeUniquePath(folder, PageFileName(base, i, images.size()), L".bmp");
             if (!WriteWholeFile(path, images[i].bmp, error))
             {
                 return false;
@@ -308,6 +451,23 @@ namespace actions
             files.push_back(path);
         }
         return true;
+    }
+
+    // Сохраняет страницы отдельными файлами в формате из [common] filetype (gif или bmp).
+    //   images - страницы;
+    //   folder - готовая (существующая) директория;
+    //   config - настройки (формат и префикс имени файла);
+    //   files  - [out] пути созданных файлов;
+    //   error  - [out] текст ошибки.
+    // Возвращает true, если сохранены все страницы.
+    bool SaveImagesAsPictures(const std::vector<ScannedImage>& images, const std::wstring& folder,
+                              const Rus1Config& config, std::vector<std::wstring>& files, std::wstring& error)
+    {
+        if (config.fileType == ImageFileType::Bmp)
+        {
+            return SaveImagesAsBmp(images, folder, config.filePrefix, files, error);
+        }
+        return SaveImagesAsGif(images, folder, config.filePrefix, files, error);
     }
 
     // Сохраняет все страницы в один PDF (по странице PDF на страницу скана) через litePDF.dll.
@@ -581,7 +741,7 @@ namespace actions
             else
             {
                 std::vector<std::wstring> files;
-                ok = SaveImagesAsBmp(images, folder, config.filePrefix, files, error);
+                ok = SaveImagesAsPictures(images, folder, config, files, error);
             }
             break;
         }
@@ -614,7 +774,7 @@ namespace actions
             }
             else
             {
-                ok = SaveImagesAsBmp(images, folder, config.filePrefix, files, error);
+                ok = SaveImagesAsPictures(images, folder, config, files, error);
             }
             if (ok)
             {

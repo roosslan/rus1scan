@@ -14,9 +14,16 @@
 enum class Rus1Action
 {
     Nothing,    // Ничего не делать (событие только пишется в журнал)
-    Save,       // Сохранить в папку (BMP или PDF)
+    Save,       // Сохранить в директорию (GIF/BMP или PDF)
     Print,      // Напечатать на принтере
     Start       // Сохранить и запустить программу, передав ей путь к файлу
+};
+
+// Формат файлов-картинок, когда в привязке pdf = false ([common] filetype).
+enum class ImageFileType
+{
+    Gif,        // По одному .gif на страницу (палитра до 256 цветов, малый размер)
+    Bmp         // По одному .bmp на страницу (без потерь, большой размер)
 };
 
 // Один параметр из секции [wia]: WIA-свойство, которое выставляется перед сканированием.
@@ -48,7 +55,7 @@ struct EventBinding
     unsigned long eventFlags = 0;   // WIA_NOTIFICATION_EVENT | WIA_ACTION_EVENT; 0 = неизвестно
     Rus1Action    action = Rus1Action::Nothing;
     std::wstring  folder;           // Save/Start: шаблон папки, например C:\Scans\%d.%m.%Y\ ;
-    bool          pdf = false;      // Save/Start: сохранять один PDF вместо BMP-файлов
+    bool          pdf = false;      // Save/Start: сохранять один PDF вместо файлов формата filetype
     std::wstring  printer;          // Print: имя принтера; пусто = принтер по умолчанию
     std::wstring  program;          // Start: командная строка программы (%1 = путь к файлу)
 };
@@ -57,6 +64,7 @@ struct EventBinding
 struct Rus1Config
 {
     std::wstring              filePrefix = L"Scan_";   // Префикс имён файлов сканов
+    ImageFileType             fileType = ImageFileType::Gif;   // [common] filetype: gif | bmp
     WiaPropList               wiaProps;                // Секция [wia]
     std::vector<EventBinding> bindings;                // Массив [[binding]]
     bool                      showDisconnectedDevices = false;  // [gui]: показывать отключённые устройства
@@ -83,3 +91,7 @@ bool SaveConfig(const std::wstring& path, const Rus1Config& config, std::wstring
 // Rus1Action <-> строка в конфиге ("nothing", "save", "print", "start").
 std::wstring ActionToString(Rus1Action action);
 bool ActionFromString(const std::wstring& text, Rus1Action& action);
+
+// ImageFileType <-> строка в конфиге ("gif", "bmp").
+std::wstring FileTypeToString(ImageFileType type);
+bool FileTypeFromString(const std::wstring& text, ImageFileType& type);

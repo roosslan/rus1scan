@@ -5,6 +5,8 @@
 #
 # [common]
 #   filePrefix - префикс имён файлов сканов (далее дата_время и номер страницы).
+#   filetype   - формат файлов при pdf = false: gif (палитра до 256 цветов, малый размер)
+#                или bmp (без потерь, большой размер).
 #
 # [gui]
 #   showDisconnectedDevices - показывать в окне настроек отключённые устройства.
@@ -27,13 +29,14 @@
 #   eventGuid  - GUID события WIA; eventFlags: 1 = уведомление, 2 = действие, 3 = оба;
 #   action     - nothing | save | print | start;
 #   folder     - шаблон папки для save/start: %d %m %Y %y %H %M %S (дата/время);
-#   pdf        - true: сохранять все страницы в один PDF, false: BMP-файлы;
+#   pdf        - true: сохранять все страницы в один PDF, false: файлы формата filetype (по одному на страницу);
 #   printer    - принтер для print ('' = принтер по умолчанию);
 #   program    - программа для start; %1 заменяется путём к файлу,
 #                без %1 путь добавляется в конец командной строки.
 
 [common]
 filePrefix = 'Сканирование_'
+filetype = 'gif'
 
 [gui]
 showDisconnectedDevices = false

@@ -309,6 +309,25 @@ bool ActionFromString(const std::wstring& text, Rus1Action& action)
     return false;
 }
 
+// Преобразует формат файлов в строку для конфига ("gif" или "bmp").
+//   type - формат файлов.
+std::wstring FileTypeToString(ImageFileType type)
+{
+    return type == ImageFileType::Bmp ? L"bmp" : L"gif";
+}
+
+// Разбирает значение [common] filetype (без учёта регистра).
+//   text - "gif" или "bmp";
+//   type - [out] результат.
+// Возвращает false, если строка не распознана.
+bool FileTypeFromString(const std::wstring& text, ImageFileType& type)
+{
+    const std::wstring t = strutil::Trim(text);
+    if (strutil::EqualsNoCase(t, L"gif")) { type = ImageFileType::Gif; return true; }
+    if (strutil::EqualsNoCase(t, L"bmp")) { type = ImageFileType::Bmp; return true; }
+    return false;
+}
+
 // Читает конфиг из файла TOML.
 //   path   - путь к rus1scan.toml;
 //   config - [out] настройки; если файла нет, остаются значения по умолчанию;
@@ -360,6 +379,17 @@ bool LoadConfig(const std::wstring& path, Rus1Config& config, std::wstring& erro
                 if (entry.first == "filePrefix")
                 {
                     if (!ReadString(entry.second, entry.first, result.filePrefix, error)) return false;
+                }
+                else if (entry.first == "filetype")
+                {
+                    std::wstring text;
+                    if (!ReadString(entry.second, entry.first, text, error)) return false;
+                    if (!FileTypeFromString(text, result.fileType))
+                    {
+                        error = L"строка " + std::to_wstring(entry.second.line) + L": неизвестный filetype \"" + text +
+                                L"\" (допустимо: gif, bmp)";
+                        return false;
+                    }
                 }
                 else
                 {
@@ -423,6 +453,8 @@ bool SaveConfig(const std::wstring& path, const Rus1Config& config, std::wstring
     out += "#\r\n";
     out += "# [common]\r\n";
     out += "#   filePrefix - префикс имён файлов сканов (далее дата_время и номер страницы).\r\n";
+    out += "#   filetype   - формат файлов при pdf = false: gif (палитра до 256 цветов, малый размер)\r\n";
+    out += "#                или bmp (без потерь, большой размер).\r\n";
     out += "#\r\n";
     out += "# [gui]\r\n";
     out += "#   showDisconnectedDevices - показывать в окне настроек отключённые устройства.\r\n";
@@ -445,7 +477,7 @@ bool SaveConfig(const std::wstring& path, const Rus1Config& config, std::wstring
     out += "#   eventGuid  - GUID события WIA; eventFlags: 1 = уведомление, 2 = действие, 3 = оба;\r\n";
     out += "#   action     - nothing | save | print | start;\r\n";
     out += "#   folder     - шаблон папки для save/start: %d %m %Y %y %H %M %S (дата/время);\r\n";
-    out += "#   pdf        - true: сохранять все страницы в один PDF, false: BMP-файлы;\r\n";
+    out += "#   pdf        - true: сохранять все страницы в один PDF, false: файлы формата filetype (по одному на страницу);\r\n";
     out += "#   printer    - принтер для print ('' = принтер по умолчанию);\r\n";
     out += "#   program    - программа для start; %1 заменяется путём к файлу,\r\n";
     out += "#                без %1 путь добавляется в конец командной строки.\r\n";
@@ -453,6 +485,7 @@ bool SaveConfig(const std::wstring& path, const Rus1Config& config, std::wstring
 
     out += "[common]\r\n";
     AppendStringKey(out, "filePrefix", config.filePrefix);
+    AppendStringKey(out, "filetype", FileTypeToString(config.fileType));
     out += "\r\n";
 
     out += "[gui]\r\n";

@@ -1,4 +1,4 @@
-// actions.h: действия над отсканированными изображениями - сохранение (BMP/PDF),
+// actions.h: действия над отсканированными изображениями - сохранение (GIF/BMP/PDF),
 // печать и запуск программы, а также выполнение привязки "событие -> действие".
 
 #pragma once
@@ -20,9 +20,17 @@ namespace actions
     // Загружает .bmp-файл с диска (для режима /process).
     bool LoadBmpFile(const std::wstring& path, ScannedImage& image, std::wstring& error);
 
+    // Сохраняет страницы как отдельные .gif-файлы.
+    bool SaveImagesAsGif(const std::vector<ScannedImage>& images, const std::wstring& folder,
+                         const std::wstring& prefix, std::vector<std::wstring>& files, std::wstring& error);
+
     // Сохраняет страницы как отдельные .bmp-файлы.
     bool SaveImagesAsBmp(const std::vector<ScannedImage>& images, const std::wstring& folder,
                          const std::wstring& prefix, std::vector<std::wstring>& files, std::wstring& error);
+
+    // Сохраняет страницы отдельными файлами в формате [common] filetype.
+    bool SaveImagesAsPictures(const std::vector<ScannedImage>& images, const std::wstring& folder,
+                              const Rus1Config& config, std::vector<std::wstring>& files, std::wstring& error);
 
     // Сохраняет все страницы в один PDF-файл.
     bool SaveImagesAsPdf(const std::vector<ScannedImage>& images, const std::wstring& folder,
