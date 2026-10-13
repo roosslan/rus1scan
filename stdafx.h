@@ -1,62 +1,47 @@
-// stdafx.h: include file for standard system include files,
-// or project specific include files that are used frequently, but
-// are changed infrequently
+// stdafx.h: общий заголовок проекта rus1scan.
+// Подключает MFC, WIA, Win32 API и STL, которые используются почти во всех модулях.
 
-#define WIN32_LEAN_AND_MEAN // MFC must use Winsock2.h. So we need include MFC headers first (before windows.h).
-
-#ifndef __STDAFX__
-#define __STDAFX__
-
-#if _MSC_VER > 1000
 #pragma once
-#endif // _MSC_VER > 1000
 
-#define VC_EXTRALEAN				// Exclude rarely-used stuff from Windows headers
+#ifndef VC_EXTRALEAN
+#define VC_EXTRALEAN                // Исключаем редко используемые части заголовков Windows
+#endif
 
-#include <afxwin.h>					// MFC core and standard components
-#include <afxext.h>					// MFC extensions
+#include <afxwin.h>                 // Ядро MFC
+#include <afxext.h>                 // Расширения MFC
+#include <afxdlgs.h>                // CFolderPickerDialog
 #ifndef _AFX_NO_AFXCMN_SUPPORT
-#include <afxcmn.h>					// MFC support for Windows Common Controls
-#endif // _AFX_NO_AFXCMN_SUPPORT
+#include <afxcmn.h>                 // Common Controls (CToolTipCtrl)
+#endif
 
-#include <atlcomcli.h>
+#include <atlbase.h>
+#include <atlcomcli.h>              // CComPtr, CComQIPtr, CComBSTR
 #include <winsvc.h>
-#include <tchar.h>
-#include <stdio.h>
-#include <iostream>
+#include <winspool.h>
+#include <shlwapi.h>
+#include <shlobj.h>
+#include <sddl.h>
+#include <wia.h>
+#include <sti.h>
+
 #include <string>
 #include <vector>
+#include <deque>
+#include <map>
 #include <set>
-#include <shlobj.h>
-#include <codecvt> // for std::codecvt_utf8
-#include <locale>  // for std::wstring_convert
-#include <commctrl.h>
-#include <shellapi.h>
-#include <objbase.h>
-#include <atlbase.h>
-#include <wia.h>
+#include <memory>
+#include <mutex>
+#include <atomic>
+#include <functional>
 #include <filesystem>
-#include <regex>
-#include <sti.h>
-#include <gdiplus.h>
-#include <windows.h>
-#include <fstream>
 #include <sstream>
-#include <conio.h>
-#include <thread>
-#include <string_view>
+#include <type_traits>
 
-#include "boost_logger.h"
-#include "BitmapUtil.h"
-#include "ProgressDlg.h"
-#include "WiaDataCallback.h"
+#pragma comment(lib, "wiaguid.lib")
+#pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "winspool.lib")
+#pragma comment(lib, "advapi32.lib")
 
-#define COUNTOF(x) ( sizeof(x) / sizeof(*x) )
+#include "logger.h"
 
-#define DEFAULT_STRING_SIZE 256
-
-extern HINSTANCE g_hInstance;
-
-//{{AFX_INSERT_LOCATION}}
-// Microsoft Visual Studio will insert additional declarations immediately before the previous line.
-#endif //__STDAFX__
+#define COUNTOF(x) (sizeof(x) / sizeof(*(x)))

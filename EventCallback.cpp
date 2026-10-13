@@ -1,196 +1,162 @@
-#include "StdAfx.h"
-#include "EventCallback.h"
-#include "WiaWrap.h"
+// EventCallback.cpp: приёмник событий WIA (см. EventCallback.h).
 
-#include "helper_funcs.h"
+#include "stdafx.h"
+#include "EventCallback.h"
+#include "strutil.h"
 
 namespace WiaWrap
 {
-	//////////////////////////////////////////////////////////////////////////
-	// CEventCallback::CEventCallback
-	CEventCallback::CEventCallback()
-	{
-		m_cRef = 0;
-		m_nNumDevices = 0;
-	}
+    // Создаёт приёмник событий. Счётчик ссылок начинается с 0 - объект нужно сразу
+    // поместить в CComPtr.
+    //   handler - функция, которой передаётся каждое пришедшее событие.
+    CEventCallback::CEventCallback(WiaEventHandler handler)
+        : m_cRef(0), m_handler(std::move(handler))
+    {
+    }
 
-	//////////////////////////////////////////////////////////////////////////
-	//
-	// CEventCallback::QueryInterface
+    // Стандартный IUnknown::QueryInterface: поддерживаются IUnknown и IWiaEventCallback.
+    //   iid    - идентификатор запрашиваемого интерфейса;
+    //   ppvObj - [out] указатель на интерфейс (с AddRef) или NULL.
+    // Возвращает S_OK, E_NOINTERFACE или E_POINTER.
+    STDMETHODIMP CEventCallback::QueryInterface(REFIID iid, LPVOID* ppvObj)
+    {
+        if (ppvObj == NULL)
+        {
+            return E_POINTER;
+        }
 
-	STDMETHODIMP CEventCallback::QueryInterface(REFIID iid, LPVOID* ppvObj)
-	{
-		if (ppvObj == NULL)
-		{
-			LOG_SAVE << "QueryInterface: ppvObj is NULL";
-			return E_POINTER;
-		}
+        if (iid == IID_IUnknown)
+        {
+            *ppvObj = static_cast<IUnknown*>(this);
+        }
+        else if (iid == IID_IWiaEventCallback)
+        {
+            *ppvObj = static_cast<IWiaEventCallback*>(this);
+        }
+        else
+        {
+            *ppvObj = NULL;
+            return E_NOINTERFACE;
+        }
 
-		if (iid == IID_IUnknown)
-		{
-			LOG_SAVE << "iid == IID_IUnknown";
-			LOG_SAVE << ppvObj;
-			*ppvObj = (IUnknown*)this;
-		}
-		else if (iid == IID_IWiaEventCallback)
-		{
-			LOG_SAVE << "iid == IID_IWiaEventCallback";
-			LOG_SAVE << ppvObj;
-			*ppvObj = (IWiaEventCallback*)this;
-		}
-		else
-		{			
-			*ppvObj = NULL;
-//			LOG_SAVE << "The iid is not defined";
-//			LOG_SAVE << iid.Data2;
-			return E_NOINTERFACE;
-		}
+        AddRef();
+        return S_OK;
+    }
 
-		AddRef();
-		LOG_SAVE << "QueryInterface returns OK";
-		return S_OK;
-	}
+    // Увеличивает счётчик ссылок (потокобезопасно). Возвращает новое значение.
+    STDMETHODIMP_(ULONG) CEventCallback::AddRef()
+    {
+        return InterlockedIncrement(&m_cRef);
+    }
 
-	//////////////////////////////////////////////////////////////////////////
-	//
-	// CEventCallback::AddRef
-	//
+    // Уменьшает счётчик ссылок; при достижении 0 удаляет объект. Возвращает новое значение.
+    STDMETHODIMP_(ULONG) CEventCallback::Release()
+    {
+        const LONG cRef = InterlockedDecrement(&m_cRef);
+        if (cRef == 0)
+        {
+            delete this;
+        }
+        return cRef;
+    }
 
-	STDMETHODIMP_(ULONG) CEventCallback::AddRef()
-	{
-//		LOG_SAVE << "ADD REF";
-		return InterlockedIncrement(&m_cRef);
-	}
+    // Вызывается службой WIA при наступлении события, на которое зарегистрирован объект.
+    //   pEventGuid            - GUID события (WIA_EVENT_SCAN_IMAGE, WIA_EVENT_DEVICE_CONNECTED, ...);
+    //   bstrEventDescription  - описание события;
+    //   bstrDeviceID          - WIA ID устройства;
+    //   bstrDeviceDescription - описание устройства;
+    //   dwDeviceType          - тип устройства (STI_DEVICE_TYPE);
+    //   bstrFullItemName      - полное имя элемента, к которому относится событие (может быть пустым);
+    //   pulEventType          - тип события (WIA_NOTIFICATION_EVENT / WIA_ACTION_EVENT), может быть NULL;
+    //   ulReserved            - зарезервировано.
+    // Копирует параметры и передаёт их обработчику. Всегда возвращает S_OK.
+    STDMETHODIMP CEventCallback::ImageEventCallback(
+        LPCGUID pEventGuid,
+        BSTR    bstrEventDescription,
+        BSTR    bstrDeviceID,
+        BSTR    bstrDeviceDescription,
+        DWORD   dwDeviceType,
+        BSTR    bstrFullItemName,
+        ULONG*  pulEventType,
+        ULONG   ulReserved
+    )
+    {
+        UNREFERENCED_PARAMETER(ulReserved);
 
-	//////////////////////////////////////////////////////////////////////////
-	//
-	// CEventCallback::Release
-	//
+        WiaEventNotification event;
+        if (pEventGuid != NULL)
+        {
+            event.eventGuid = *pEventGuid;
+        }
+        event.eventGuidText = strutil::GuidToString(event.eventGuid);
+        event.eventDescription = strutil::BstrToWide(bstrEventDescription);
+        event.deviceId = strutil::BstrToWide(bstrDeviceID);
+        event.deviceDescription = strutil::BstrToWide(bstrDeviceDescription);
+        event.fullItemName = strutil::BstrToWide(bstrFullItemName);
+        event.deviceType = dwDeviceType;
+        event.eventType = (pulEventType != NULL) ? *pulEventType : 0;
 
-	STDMETHODIMP_(ULONG) CEventCallback::Release()
-	{
-//		LOG_SAVE << "Release";
-		LONG cRef = InterlockedDecrement(&m_cRef);
+        LOG_SAVE << "WIA event '" << event.eventDescription << "' " << event.eventGuidText
+                 << " from '" << event.deviceDescription << "' (" << event.deviceId << ") item='"
+                 << event.fullItemName << "' type=" << event.eventType;
 
-		if (cRef == 0)
-		{
-//			LOG_SAVE << "Delete this";
-			delete this;
-		}
+        if (m_handler)
+        {
+            m_handler(event);
+        }
+        return S_OK;
+    }
 
-//		LOG_SAVE << "cRef returned";
-		return cRef;
-	}
+    // Регистрирует приёмник на каждое из указанных событий для всех устройств
+    // (идентификатор устройства NULL): так регистрация переживает отключение и
+    // повторное подключение сканера, а нужное устройство выбирается по bstrDeviceID
+    // в момент события. Ранее сделанные регистрации сохраняются.
+    //   pWiaDevMgr - менеджер устройств WIA;
+    //   events     - GUID событий.
+    // Возвращает S_OK, если все события зарегистрированы, иначе код последней ошибки
+    // (успешные регистрации при этом остаются в силе).
+    HRESULT CEventCallback::Register(IWiaDevMgr* pWiaDevMgr, const std::vector<GUID>& events)
+    {
+        if (pWiaDevMgr == NULL)
+        {
+            return E_POINTER;
+        }
 
-	//////////////////////////////////////////////////////////////////////////
-	// CEventCallback::ImageEventCallback
-	// The IWiaEventCallback::ImageEventCallback method is invoked by the WIA
-	// run-time system when a hardware device event occurs.
-	STDMETHODIMP CEventCallback::ImageEventCallback(
-		LPCGUID pEventGuid,
-		BSTR    bstrEventDescription,
-		BSTR    bstrDeviceID,
-		BSTR    bstrDeviceDescription,
-		DWORD   dwDeviceType,
-		BSTR    bstrFullItemName,
-		ULONG*  pulEventType,
-		ULONG   ulReserved
-	)
-	{	
-		LOG_SAVE << bstr_to_u32(bstrEventDescription) << " / " << pEventGuid << "on " << bstr_to_u32(bstrDeviceDescription) << " / " << bstr_to_u32(bstrDeviceID) << " was occured.";
-		return WiaGetNumDevices(NULL, &m_nNumDevices);
-	}
+        HRESULT result = S_OK;
+        for (const GUID& guid : events)
+        {
+            CComPtr<IUnknown> registration;
+            const HRESULT hr = pWiaDevMgr->RegisterEventCallbackInterface(0, NULL, &guid, this, &registration);
+            if (SUCCEEDED(hr) && registration != NULL)
+            {
+                m_registrations.push_back(registration);
+                LOG_SAVE << "Registered for WIA event " << strutil::GuidToString(guid);
+            }
+            else
+            {
+                result = FAILED(hr) ? hr : E_FAIL;
+                LOG_SAVE << "RegisterEventCallbackInterface(" << strutil::GuidToString(guid)
+                         << ") failed: " << rLogger::HrText(hr);
+            }
+        }
+        return result;
+    }
 
-	//////////////////////////////////////////////////////////////////////////
-	// CEventCallback::Register
-	HRESULT CEventCallback::Register()
-	{
-		HRESULT hr;
+    // Отменяет все регистрации (освобождает объекты, полученные от
+    // RegisterEventCallbackInterface). После этого новые события не приходят.
+    void CEventCallback::Unregister()
+    {
+        if (!m_registrations.empty())
+        {
+            LOG_SAVE << "Unregistering " << m_registrations.size() << " WIA event registration(s)";
+        }
+        m_registrations.clear();
+    }
 
-		// Create a connection to the local WIA device manager
-
-		CComPtr<IWiaDevMgr> pWiaDevMgr;
-
-		hr = pWiaDevMgr.CoCreateInstance(CLSID_WiaDevMgr);
-
-		if (FAILED(hr))
-		{
-			LOG_SAVE << "CoCreateInstance FAILED";
-			LOG_SAVE << GetLastError();
-			return hr;
-		}
-
-		// Register the callback interface
-		LOG_SAVE << "Event WIA_EVENT_DEVICE_CONNECTED registered";
-		hr = pWiaDevMgr->RegisterEventCallbackInterface(
-			0,
-			NULL,
-			&WIA_EVENT_DEVICE_CONNECTED,
-			this,
-			&m_pConnectEventObject
-		);
-		if (FAILED(hr))
-		{
-			LOG_SAVE << "Event WIA_EVENT_DEVICE_CONNECTED registering FAILED";
-			LOG_SAVE << GetLastError();
-			return hr;
-		}
-
-/*		GUID guid; ������ E - mail
-		CLSIDFromString(L"{4d36e96e-e325-11ce-bfc1-08002be10318}", &guid);	*/
-		GUID WIA_CUSTO_EVENT = { 0xD0C45E80, 0x6B8C, 0x11D3, { 0xa8, 0x2a, 0x00, 0xA0, 0x24, 0x91, 0xdf, 0x4e } }; 
-		hr = pWiaDevMgr->RegisterEventCallbackInterface(
-			0,
-			NULL,
-			&WIA_CUSTO_EVENT,
-			this,
-			&m_pCustomEventObject
-		);
-		if (FAILED(hr))
-		{
-			LOG_SAVE << "Registering Custom Event FAILED!";
-			LOG_SAVE << GetLastError();
-			return hr;
-		}
-		LOG_SAVE << "Custom Event registered";
-
-		LOG_SAVE << "Event WIA_EVENT_DEVICE_DISCONNECTED registered";
-		hr = pWiaDevMgr->RegisterEventCallbackInterface(
-			0,
-			NULL,
-			&WIA_EVENT_DEVICE_DISCONNECTED,
-			this,
-			&m_pDisconnectEventObject
-		);
-
-		if (FAILED(hr))
-		{
-			LOG_SAVE << "FAIL!";
-			LOG_SAVE << GetLastError();
-			return hr;
-		}
-
-		// Get the current count of all the WIA devices on the system
-
-		hr = WiaGetNumDevices(pWiaDevMgr, &m_nNumDevices);
-		if (FAILED(hr))
-		{
-			LOG_SAVE << "WiaGetNumDevices FAILED";
-			LOG_SAVE << GetLastError();
-			return hr;
-		}
-		LOG_SAVE << "WiaGetNumDevices OK";
-		return S_OK;
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-	//
-	// CEventCallback::GetNumDevices
-	//
-
-	ULONG CEventCallback::GetNumDevices() const
-	{
-		return m_nNumDevices;
-	}
+    // Возвращает число действующих регистраций.
+    size_t CEventCallback::RegisteredCount() const
+    {
+        return m_registrations.size();
+    }
 
 }; // namespace WiaWrap

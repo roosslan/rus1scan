@@ -2,16 +2,24 @@
 
 Copyright (c) Microsoft Corporation. All rights reserved.
 
+Основано на примере Microsoft "WiaWrap": функции для работы с DIB в памяти.
+
 --*/
 
-#include "StdAfx.h"
+#include "stdafx.h"
+#include "BitmapUtil.h"
 
-namespace BitmapUtil 
+namespace BitmapUtil
 {
 
 //////////////////////////////////////////////////////////////////////////
 //
 // GetBitmapHeaderSize
+//
+// Определяет размер заголовка DIB по его первому полю (biSize/bcSize).
+//   pDib - указатель на DIB в памяти (начинается с BITMAPCOREHEADER,
+//          BITMAPINFOHEADER, BITMAPV4HEADER или BITMAPV5HEADER).
+// Возвращает размер заголовка в байтах или 0, если заголовок не распознан.
 //
 
 ULONG GetBitmapHeaderSize(LPCVOID pDib)
@@ -37,6 +45,11 @@ ULONG GetBitmapHeaderSize(LPCVOID pDib)
 //
 // GetBitmapLineWidthInBytes
 //
+// Вычисляет размер одной строки пикселей в байтах. Строки DIB выровнены на 4 байта.
+//   nWidthInPixels - ширина строки в пикселях;
+//   nBitCount      - число бит на пиксель (1, 4, 8, 16, 24, 32).
+// Возвращает размер строки в байтах.
+//
 
 ULONG GetBitmapLineWidthInBytes(ULONG nWidthInPixels, ULONG nBitCount)
 {
@@ -47,6 +60,12 @@ ULONG GetBitmapLineWidthInBytes(ULONG nWidthInPixels, ULONG nBitCount)
 //////////////////////////////////////////////////////////////////////////
 //
 // GetBitmapDimensions
+//
+// Возвращает ширину и высоту DIB в пикселях.
+//   pDib    - указатель на DIB в памяти;
+//   pWidth  - [out, необязательный] ширина; может быть NULL;
+//   pHeight - [out, необязательный] высота (всегда положительная); может быть NULL.
+// Возвращает TRUE, если заголовок распознан, иначе FALSE.
 //
 
 BOOL GetBitmapDimensions(LPCVOID pDib, UINT *pWidth, UINT *pHeight)
@@ -94,6 +113,12 @@ BOOL GetBitmapDimensions(LPCVOID pDib, UINT *pWidth, UINT *pHeight)
 //////////////////////////////////////////////////////////////////////////
 //
 // GetBitmapSize
+//
+// Вычисляет полный размер DIB: заголовок + палитра (если есть) + маски BI_BITFIELDS +
+// ICC-профиль (если есть) + пиксельные данные. Используется, чтобы заранее выделить
+// буфер под изображение при передаче данных от сканера.
+//   pDib - указатель на DIB в памяти.
+// Возвращает размер в байтах или 0, если заголовок не распознан.
 //
 
 ULONG GetBitmapSize(LPCVOID pDib)
@@ -207,6 +232,10 @@ ULONG GetBitmapSize(LPCVOID pDib)
 //
 // GetBitmapOffsetBits
 //
+// Вычисляет смещение пиксельных данных от начала DIB (заголовок + палитра + маски + профиль).
+//   pDib - указатель на DIB в памяти.
+// Возвращает смещение в байтах или 0, если заголовок не распознан.
+//
 
 ULONG GetBitmapOffsetBits(LPCVOID pDib)
 {
@@ -287,6 +316,15 @@ ULONG GetBitmapOffsetBits(LPCVOID pDib)
 //////////////////////////////////////////////////////////////////////////
 //
 // FixBitmapHeight
+//
+// Некоторые протяжные сканеры передают высоту изображения 0, потому что заранее её
+// не знают. Функция вычисляет высоту по фактическому размеру данных и исправляет
+// поля biHeight/biSizeImage (bcHeight для старого заголовка).
+//   pDib     - указатель на DIB в памяти (заголовок изменяется на месте);
+//   nSize    - полный размер данных изображения в байтах;
+//   bTopDown - TRUE, если первая строка в памяти - верхняя строка изображения
+//              (тогда высота записывается отрицательной).
+// Возвращает TRUE, если заголовок распознан, иначе FALSE.
 //
 
 BOOL FixBitmapHeight(PVOID pDib, ULONG nSize, BOOL bTopDown)
@@ -422,6 +460,12 @@ BOOL FixBitmapHeight(PVOID pDib, ULONG nSize, BOOL bTopDown)
 //////////////////////////////////////////////////////////////////////////
 //
 // FillBitmapFileHeader
+//
+// Заполняет BITMAPFILEHEADER (заголовок .bmp-файла) по данным DIB. Нужна для формата
+// WiaImgFmt_MEMORYBMP, в котором WIA передаёт DIB без файлового заголовка.
+//   pDib  - указатель на DIB в памяти;
+//   pbmfh - [out] заполняемый заголовок файла.
+// Возвращает TRUE, если заголовок DIB распознан, иначе FALSE.
 //
 
 BOOL FillBitmapFileHeader(LPCVOID pDib, PBITMAPFILEHEADER pbmfh)

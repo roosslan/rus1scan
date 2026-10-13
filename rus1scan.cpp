@@ -1,563 +1,745 @@
+// rus1scan.cpp: работа с устройствами WIA (см. rus1scan.h).
+
 #include "stdafx.h"
 #include "rus1scan.h"
-#include "helper_funcs.h"
+#include "WiaWrap.h"
+#include "DataCallback.h"
+#include "strutil.h"
+#include "wia_names.h"
 
-Crus1scan::Crus1scan(IWiaDevMgr** device_manager) {
-    LOG_SAVE << "Crus1scan Constructor";
-
-    // Initialize COM
-    // HRESULT hr = CoInitialize(NULL);
-    // � InitInstance ��� ������ HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED); */
-    // if (SUCCEEDED(hr))
-    {
-        /* Create the device manager */
-        IWiaDevMgr* pWiaDevMgr = nullptr;
-
-        HRESULT hr = create_wia_device_manager(&pWiaDevMgr);
-        if (SUCCEEDED(hr)) {
-            /* Enumerate all of the WIA devices */
-            hr = enumerate_wia_devices(pWiaDevMgr);
-            if (FAILED(hr)) {
-                LOG_SAVE << "Error calling EnumerateWiaDevices";
-            }
-            
-            /* Release the device manager */
-            pWiaDevMgr->Release();
-            pWiaDevMgr = nullptr;
-        }
-        else {
-            LOG_SAVE << "Error calling CreateWiaDeviceManager";
-        }
-
-        /* Uninitialize COM */
-        CoUninitialize();
-    }
-}
-
-HRESULT Crus1scan::transfer_wia_item(IWiaItem* pWiaItem) {
-    LOG_SAVE << "Start transferring";
-
-    /* Validate arguments */
-    if (nullptr == pWiaItem)
-        return E_INVALIDARG;
-
-    /* Get the IWiaPropertyStorage interface so we can set required properties */
-    IWiaPropertyStorage* pWiaPropertyStorage = nullptr;
-
-    HRESULT hr = pWiaItem->QueryInterface(IID_IWiaPropertyStorage, reinterpret_cast<void**>(&pWiaPropertyStorage));
-    if (SUCCEEDED(hr)) {
-        /* Prepare PROPSPECs and PROPVARIANTs for setting the media type and format */
-        PROPSPEC prop_spec[2] = {};
-        PROPVARIANT prop_variant[2] = {};
-        constexpr ULONG prop_count = std::size(prop_variant);
-
-        /* Use BMP as the output format */
-        GUID guid_output_format = WiaImgFmt_BMP;
-
-        /* Initialize the PROPSPECs */
-        prop_spec[0].ulKind = PRSPEC_PROPID;
-        prop_spec[0].propid = WIA_IPA_FORMAT;
-        prop_spec[1].ulKind = PRSPEC_PROPID;
-        prop_spec[1].propid = WIA_IPA_TYMED;
-
-        /* Initialize the PROPVARIANTs */
-        prop_variant[0].vt = VT_CLSID;
-        prop_variant[0].puuid = &guid_output_format;
-        prop_variant[1].vt = VT_I4;
-        prop_variant[1].lVal = TYMED_FILE;
-
-
-        /* Set the properties */
-        hr = pWiaPropertyStorage->WriteMultiple(prop_count, prop_spec, prop_variant, WIA_IPA_FIRST);
-        if (SUCCEEDED(hr))
-        {
-            /* Get the IWiaDataTransfer interface */
-            IWiaDataTransfer* pWiaDataTransfer = nullptr;
-            hr = pWiaItem->QueryInterface(IID_IWiaDataTransfer, (void**)&pWiaDataTransfer);
-            if (SUCCEEDED(hr))
-            {
-                /* Create our callback class */
-                if (auto p_callback = new CWiaDataCallback)
-                {
-                    /* Get the IWiaDataCallback interface from our callback class */
-                    IWiaDataCallback* pWiaDataCallback = nullptr;
-                    hr = p_callback->QueryInterface(IID_IWiaDataCallback, reinterpret_cast<void**>(&pWiaDataCallback));
-                    if (SUCCEEDED(hr))
-                    {
-                        /* Perform the transfer using default settings */
-                        STGMEDIUM stg_medium;
-                        stg_medium = {0};
-
-                        LOG_SAVE << "idtGetData";
-                        hr = pWiaDataTransfer->idtGetData(&stg_medium, pWiaDataCallback);
-                        if (S_OK == hr) {
-                            /* NB: filename is WCHAR, not TCHAR */
-                            LOG_SAVE << "Transferred filename: " << stg_medium.lpszFileName;
-
-                            /* Release memory, associated with the stg_medium */
-                            ReleaseStgMedium(&stg_medium);
-                        }
-                        else {
-                            LOG_SAVE << "pWiaDataTransfer->idtGetData failed";
-                        }
-
-                        /* Release the callback interface */
-                        pWiaDataCallback->Release();
-                        pWiaDataCallback = nullptr;
-                    }
-                    else {
-                        LOG_SAVE << "pCallback->QueryInterface failed on IID_IWiaDataCallback";
-                    }
-
-                    /* Release our callback. It should now delete itself */
-                    p_callback->Release();
-                    p_callback = nullptr;
-                }
-                else {
-                    LOG_SAVE << "Unable to create CWiaDataCallback class instance";
-                }
-
-                /* Release the IWiaDataTransfer */
-                pWiaDataTransfer->Release();
-                pWiaDataTransfer = nullptr;
-            }
-            else {
-                LOG_SAVE << "pWiaItem->QueryInterface failed on IID_IWiaDataTransfer";
-            }
-        }
-
-        /* Release the IWiaPropertyStorage */
-        pWiaPropertyStorage->Release();
-        pWiaPropertyStorage = nullptr;
-    }
-    else {
-        LOG_SAVE << "pWiaItem->QueryInterface failed on IID_IWiaPropertyStorage";
-    }
-
-    return hr;
-}
-
-HRESULT Crus1scan::wia_get_events(IWiaItem* pWiaItem)
+// Подключается к менеджеру устройств WIA (служба stisvc, внепроцессный COM-сервер).
+//   manager - [out] указатель на IWiaDevMgr.
+// Возвращает S_OK или код ошибки CoCreateInstance.
+HRESULT CRus1scan::CreateDeviceManager(CComPtr<IWiaDevMgr>& manager)
 {
-	LOG_SAVE << "WiaGetEvents";
+    manager.Release();
+    const HRESULT hr = manager.CoCreateInstance(CLSID_WiaDevMgr, NULL, CLSCTX_LOCAL_SERVER);
+    if (FAILED(hr))
+    {
+        LOG_SAVE << "CoCreateInstance(CLSID_WiaDevMgr) failed: " << rLogger::HrText(hr);
+    }
+    return hr;
+}
 
-    if (nullptr == pWiaItem)
+// Возвращает множество ID подключённых сейчас устройств WIA (в верхнем регистре).
+//   manager - менеджер устройств WIA.
+static std::set<std::wstring> GetConnectedDeviceIds(IWiaDevMgr* manager)
+{
+    std::set<std::wstring> ids;
+    CComPtr<IEnumWIA_DEV_INFO> enumInfo;
+    if (FAILED(manager->EnumDeviceInfo(WIA_DEVINFO_ENUM_LOCAL, &enumInfo)) || enumInfo == NULL)
+    {
+        return ids;
+    }
+    for (;;)
+    {
+        CComPtr<IWiaPropertyStorage> storage;
+        ULONG fetched = 0;
+        if (enumInfo->Next(1, &storage, &fetched) != S_OK || storage == NULL)
+        {
+            break;
+        }
+        std::wstring id;
+        if (SUCCEEDED(WiaWrap::ReadPropertyString(storage, WIA_DIP_DEV_ID, &id)) && !id.empty())
+        {
+            CharUpperBuffW(&id[0], static_cast<DWORD>(id.size()));
+            ids.insert(id);
+        }
+    }
+    return ids;
+}
+
+// Перечисляет устройства WIA. Для каждого устройства читаются ID, имя, описание, тип и,
+// для подключённых, список событий (кнопок). Подключённое устройство, которое не удалось
+// открыть, всё равно попадает в список, но без событий.
+//   devices             - [out] список устройств (поле online показывает, подключено ли оно);
+//   includeDisconnected - true: также установленные в системе, но сейчас отключённые
+//                         устройства (WIA_DEVINFO_ENUM_ALL).
+// Возвращает S_OK или код ошибки подключения к WIA.
+HRESULT CRus1scan::EnumerateDevices(std::vector<WiaDeviceInfo>& devices, bool includeDisconnected)
+{
+    devices.clear();
+
+    CComPtr<IWiaDevMgr> manager;
+    HRESULT hr = CreateDeviceManager(manager);
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+
+    std::set<std::wstring> connectedIds;
+    CComPtr<IEnumWIA_DEV_INFO> enumInfo;
+    if (includeDisconnected)
+    {
+        connectedIds = GetConnectedDeviceIds(manager);
+        hr = manager->EnumDeviceInfo(WIA_DEVINFO_ENUM_ALL, &enumInfo);
+        if (FAILED(hr))
+        {
+            LOG_SAVE << "EnumDeviceInfo(WIA_DEVINFO_ENUM_ALL) failed: " << rLogger::HrText(hr)
+                     << " - listing connected devices only";
+            includeDisconnected = false;
+            enumInfo.Release();
+        }
+    }
+    if (enumInfo == NULL)
+    {
+        hr = manager->EnumDeviceInfo(WIA_DEVINFO_ENUM_LOCAL, &enumInfo);
+        if (FAILED(hr))
+        {
+            LOG_SAVE << "IWiaDevMgr::EnumDeviceInfo failed: " << rLogger::HrText(hr);
+            return hr;
+        }
+    }
+
+    for (;;)
+    {
+        CComPtr<IWiaPropertyStorage> storage;
+        ULONG fetched = 0;
+        hr = enumInfo->Next(1, &storage, &fetched);
+        if (hr != S_OK || storage == NULL)
+        {
+            break;      // S_FALSE - устройства закончились
+        }
+
+        WiaDeviceInfo info;
+        WiaWrap::ReadPropertyString(storage, WIA_DIP_DEV_ID, &info.id);
+        WiaWrap::ReadPropertyString(storage, WIA_DIP_DEV_NAME, &info.name);
+        WiaWrap::ReadPropertyString(storage, WIA_DIP_DEV_DESC, &info.description);
+
+        PROPSPEC typeSpec;
+        typeSpec.ulKind = PRSPEC_PROPID;
+        typeSpec.propid = WIA_DIP_DEV_TYPE;
+        WiaWrap::ReadPropertyLong(storage, &typeSpec, &info.type);
+
+        if (info.id.empty())
+        {
+            LOG_SAVE << "WIA device without WIA_DIP_DEV_ID skipped";
+            continue;
+        }
+        if (info.name.empty())
+        {
+            info.name = info.description.empty() ? info.id : info.description;
+        }
+
+        if (includeDisconnected)
+        {
+            std::wstring upperId = info.id;
+            CharUpperBuffW(&upperId[0], static_cast<DWORD>(upperId.size()));
+            info.online = connectedIds.count(upperId) != 0;
+        }
+
+        if (info.online)
+        {
+            CComPtr<IWiaItem> root;
+            const HRESULT hrDevice = manager->CreateDevice(CComBSTR(info.id.c_str()), &root);
+            if (SUCCEEDED(hrDevice) && root != NULL)
+            {
+                ReadDeviceEvents(root, info.events);
+            }
+            else
+            {
+                LOG_SAVE << "CreateDevice(" << info.id << ") failed: " << rLogger::HrText(hrDevice);
+            }
+        }
+
+        LOG_SAVE << "WIA device: '" << info.name << "' id=" << info.id << " type=" << info.type
+                 << (info.online ? " connected" : " disconnected") << " events=" << info.events.size();
+        devices.push_back(info);
+    }
+
+    return FAILED(hr) ? hr : S_OK;
+}
+
+// Читает список событий (кнопок и т.п.) устройства WIA. События подключения и
+// отключения устройства пропускаются - к ним нельзя привязать сканирование.
+//   rootItem - корневой элемент устройства (результат IWiaDevMgr::CreateDevice);
+//   events   - [out] список событий без повторов.
+// Возвращает S_OK или код ошибки EnumDeviceCapabilities.
+HRESULT CRus1scan::ReadDeviceEvents(IWiaItem* rootItem, std::vector<WiaEventInfo>& events)
+{
+    events.clear();
+    if (rootItem == NULL)
+    {
+        return E_POINTER;
+    }
+
+    CComPtr<IEnumWIA_DEV_CAPS> enumCaps;
+    HRESULT hr = rootItem->EnumDeviceCapabilities(WIA_DEVICE_EVENTS, &enumCaps);
+    if (FAILED(hr) || enumCaps == NULL)
+    {
+        LOG_SAVE << "EnumDeviceCapabilities failed: " << rLogger::HrText(hr);
+        return FAILED(hr) ? hr : E_FAIL;
+    }
+
+    for (;;)
+    {
+        WIA_DEV_CAP cap = {};
+        ULONG fetched = 0;
+        hr = enumCaps->Next(1, &cap, &fetched);
+        if (hr != S_OK || fetched == 0)
+        {
+            break;
+        }
+
+        WiaEventInfo info;
+        info.guid = strutil::GuidToString(cap.guid);
+        info.name = strutil::BstrToWide(cap.bstrName);
+        info.description = strutil::BstrToWide(cap.bstrDescription);
+        info.flags = cap.ulFlags;
+
+        // Строки WIA_DEV_CAP принадлежат вызывающему - освобождаем
+        SysFreeString(cap.bstrName);
+        SysFreeString(cap.bstrDescription);
+        SysFreeString(cap.bstrIcon);
+        SysFreeString(cap.bstrCommandline);
+
+        if (IsEqualGUID(cap.guid, WIA_EVENT_DEVICE_CONNECTED) || IsEqualGUID(cap.guid, WIA_EVENT_DEVICE_DISCONNECTED))
+        {
+            continue;
+        }
+
+        bool duplicate = false;
+        for (const auto& existing : events)
+        {
+            duplicate = duplicate || strutil::EqualsNoCase(existing.guid, info.guid);
+        }
+        if (!duplicate)
+        {
+            LOG_SAVE << "  event " << info.guid << " '" << info.name << "' flags=" << info.flags;
+            events.push_back(info);
+        }
+    }
+
+    return S_OK;
+}
+
+// Сканирует изображение(я) с устройства без пользовательского интерфейса.
+// Порядок: открыть устройство -> найти элемент для сканирования -> выставить
+// WIA-свойства из конфига -> включить все страницы для автоподатчика -> передать данные.
+//   deviceId - WIA ID устройства (из события);
+//   itemName - полное имя элемента из события (может быть пустым - тогда берётся
+//              первый элемент-изображение устройства);
+//   wiaProps - свойства из секции [wia] конфига;
+//   images   - [out] полученные страницы (готовые .bmp в памяти).
+// Возвращает S_OK, если получена хотя бы одна страница, иначе код ошибки.
+HRESULT CRus1scan::AcquireImages(const std::wstring& deviceId, const std::wstring& itemName,
+                                 const WiaPropList& wiaProps, std::vector<ScannedImage>& images)
+{
+    images.clear();
+    if (deviceId.empty())
+    {
         return E_INVALIDARG;
+    }
 
-    IWiaPropertyStorage* pWiaPropertyStorage = nullptr;
-    HRESULT hr = pWiaItem->QueryInterface(IID_IWiaPropertyStorage, reinterpret_cast<void**>(&pWiaPropertyStorage));
-    if (SUCCEEDED(hr)) {
-	    act_event cWIA_Device;
-	    /* Declare PROPSPECs and PROPVARIANTs, and initialize them to zero. */
-        PROPSPEC prop_spec[4] = {};
-        PROPVARIANT prop_var[4] = {};
+    CComPtr<IWiaDevMgr> manager;
+    HRESULT hr = CreateDeviceManager(manager);
+    if (FAILED(hr))
+    {
+        return hr;
+    }
 
-        // How many properties are we querying for?
-	    constexpr ULONG property_count = std::size(prop_spec);
+    CComPtr<IWiaItem> root;
+    hr = manager->CreateDevice(CComBSTR(deviceId.c_str()), &root);
+    if (FAILED(hr) || root == NULL)
+    {
+        LOG_SAVE << "CreateDevice(" << deviceId << ") failed: " << rLogger::HrText(hr);
+        return FAILED(hr) ? hr : E_FAIL;
+    }
 
-        // Define which properties we want to read: Device ID.
-        // This is what we'd use to create the device.
-        prop_spec[0].ulKind = PRSPEC_PROPID;
-        prop_spec[0].propid = WIA_IPA_FULL_ITEM_NAME;
+    CComPtr<IWiaItem> item;
+    hr = FindTransferItem(root, itemName, item);
+    if (FAILED(hr))
+    {
+        return hr;
+    }
 
-        prop_spec[1].ulKind = PRSPEC_PROPID;
-        prop_spec[1].propid = WIA_DIP_DEV_ID;
+    ApplyWiaProperties(root, item, wiaProps);
 
-        /* Device name */
-        prop_spec[2].ulKind = PRSPEC_PROPID;
-        prop_spec[2].propid = WIA_DIP_DEV_NAME;
+    bool pagesGiven = false;
+    for (const auto& setting : wiaProps)
+    {
+        pagesGiven = pagesGiven || setting.propId == WIA_DPS_PAGES;
+    }
+    if (!pagesGiven)
+    {
+        EnableFeederAllPages(root);     // После [wia]: там мог быть выбран автоподатчик
+    }
 
-        /* Device description */
-        prop_spec[3].ulKind = PRSPEC_PROPID;
-        prop_spec[3].propid = WIA_DIP_DEV_DESC;
+    hr = TransferItem(item, images);
+    if (SUCCEEDED(hr) && images.empty())
+    {
+        LOG_SAVE << "Transfer finished without images";
+        hr = E_FAIL;
+    }
+    return hr;
+}
 
-        /* property values */
-        hr = pWiaPropertyStorage->ReadMultiple(property_count, prop_spec, prop_var);
-        if (SUCCEEDED(hr)) {
-            // IWiaPropertyStorage::ReadMultiple will return S_FALSE if some
-            // properties could not be read, so we have to check the return
-            // types for each requested item.
+// Находит элемент устройства, с которого нужно сканировать.
+//   rootItem - корневой элемент устройства;
+//   itemName - полное имя элемента из события WIA (может быть пустым);
+//   item     - [out] найденный элемент.
+// Сначала ищется элемент по имени из события, затем - первый элемент-изображение
+// в дереве устройства, затем используется сам корневой элемент, если он изображение.
+// Возвращает S_OK или HRESULT_FROM_WIN32(ERROR_NOT_FOUND).
+HRESULT CRus1scan::FindTransferItem(IWiaItem* rootItem, const std::wstring& itemName, CComPtr<IWiaItem>& item)
+{
+    item.Release();
 
-            // Check the return type for the device ID
-            if (VT_BSTR == prop_var[1].vt) {
-                LOG_SAVE << "Item Name: " << prop_var[1].bstrVal;
-                cWIA_Device.device_guid = bstr_to_std_string(prop_var[1].bstrVal);
-                cWIA_Device.index_of_device = dev_index_;
-                ++dev_index_;
-            }
-            if (VT_BSTR == prop_var[2].vt) {
-                LOG_SAVE << "Item Name: " << prop_var[2].bstrVal;
-                cWIA_Device.device_name = bstr_to_std_string(prop_var[2].bstrVal);
-            }
-            if (VT_BSTR == prop_var[3].vt) {
-                LOG_SAVE << "Item Name: " << prop_var[3].bstrVal;
-            }
-
-            /* Free the returned PROPVARIANTs */
-            FreePropVariantArray(property_count, prop_var);
+    if (!itemName.empty())
+    {
+        CComPtr<IWiaItem> found;
+        const HRESULT hr = rootItem->FindItemByName(0, CComBSTR(itemName.c_str()), &found);
+        if (hr == S_OK && found != NULL)
+        {
+            LOG_SAVE << "Using item from event: " << itemName;
+            item = found;
+            return S_OK;
         }
-        else {
-            LOG_SAVE << "Error calling IWiaPropertyStorage::ReadMultiple";
+        LOG_SAVE << "Item '" << itemName << "' from event not found (" << rLogger::HrText(hr) << "), searching";
+    }
+
+    if (SUCCEEDED(FindFirstImageItem(rootItem, 0, item)) && item != NULL)
+    {
+        return S_OK;
+    }
+
+    LONG rootType = 0;
+    if (SUCCEEDED(rootItem->GetItemType(&rootType)) && (rootType & WiaItemTypeImage))
+    {
+        item = rootItem;
+        return S_OK;
+    }
+
+    LOG_SAVE << "No image item found on the device";
+    return HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
+}
+
+// Рекурсивно ищет первый дочерний элемент типа "изображение" (у сканера это обычно
+// планшет или автоподатчик).
+//   parent - элемент, среди потомков которого ищем;
+//   depth  - текущая глубина рекурсии (поиск ограничен 3 уровнями);
+//   item   - [out] найденный элемент.
+// Возвращает S_OK, если элемент найден, иначе S_FALSE или код ошибки.
+HRESULT CRus1scan::FindFirstImageItem(IWiaItem* parent, int depth, CComPtr<IWiaItem>& item)
+{
+    CComPtr<IEnumWiaItem> enumItems;
+    HRESULT hr = parent->EnumChildItems(&enumItems);
+    if (FAILED(hr) || enumItems == NULL)
+    {
+        return FAILED(hr) ? hr : S_FALSE;
+    }
+
+    for (;;)
+    {
+        CComPtr<IWiaItem> child;
+        ULONG fetched = 0;
+        hr = enumItems->Next(1, &child, &fetched);
+        if (hr != S_OK || child == NULL)
+        {
+            break;
         }
 
-        IEnumWIA_DEV_CAPS* p_enum_dev_caps;
-	    ULONG l_count;
-        ULONG n_fetched;
+        LONG type = 0;
+        child->GetItemType(&type);
+        if (type & WiaItemTypeImage)
+        {
+            item = child;
+            return S_OK;
+        }
+        if ((type & WiaItemTypeFolder) && depth < 3)
+        {
+            if (FindFirstImageItem(child, depth + 1, item) == S_OK)
+            {
+                return S_OK;
+            }
+        }
+    }
+    return S_FALSE;
+}
 
-	    hr = pWiaItem->EnumDeviceCapabilities(WIA_DEVICE_COMMANDS | WIA_DEVICE_EVENTS, &p_enum_dev_caps);
-        if (hr == S_OK) {
-            LOG_SAVE << "EnumDeviceCapabilities - S_OK";
-            hr = p_enum_dev_caps->GetCount(&l_count);
-            if (l_count != 0) {
-	            CString event_str;
-	            LOG_SAVE << "Count != 0";
-                WIA_DEV_CAP* p_dev_caps = new WIA_DEV_CAP[l_count];
+namespace
+{
+    // Узнаёт тип (VARTYPE) свойства WIA, читая его текущее значение.
+    //   storage - хранилище свойств элемента;
+    //   propId  - номер свойства;
+    //   vt      - [out] тип значения.
+    // Возвращает false, если у элемента нет такого свойства.
+    bool ReadPropertyType(IWiaPropertyStorage* storage, PROPID propId, VARTYPE& vt)
+    {
+        if (storage == NULL)
+        {
+            return false;
+        }
+        PROPSPEC spec;
+        spec.ulKind = PRSPEC_PROPID;
+        spec.propid = propId;
+        PROPVARIANT var;
+        PropVariantInit(&var);
+        const HRESULT hr = storage->ReadMultiple(1, &spec, &var);
+        vt = var.vt;
+        PropVariantClear(&var);
+        return hr == S_OK && vt != VT_EMPTY;
+    }
 
-                p_enum_dev_caps->Next(l_count, p_dev_caps, &n_fetched);                
-                for (int i = 0; i < n_fetched; i++)
-                {                    
-                    if (1 == p_dev_caps[i].ulFlags || 3 == p_dev_caps[i].ulFlags) /* "1" - connected/disconnected, "3" means Button
-                         * pDevCaps[i].ulFlags |= WIA_DEVICE_PROPERTY_BROADCAST_CONNECT, WIA_DEVICE_FLAGS_NO_BROADCAST_CONNECT;
-                         * ���������� ����� ����������, �������� �� ������� ����� �������� ��� ����� ����������� - �������� ulFlags ��������� WIA_DEV_CAP, ������������ � ������������ �������.
-                         * WIA_IS_DEFAULT_HANDLER	The currently registered handler should be used.This is the only valid value when enumerating event handlers.It is not a valid value when enumerating event capabilities of a device.
-                         * WIA_ACTION_EVENT	The event is of the action type, so programs that use persistent registration APIs, IWiaDevMgr::RegisterEventCallbackProgram and IWiaDevMgr::RegisterEventCallbackCLSID, can receive it.
-                         * WIA_NOTIFICATION_EVENT	The event is of the notification type, so programs that use the runtime registration function, IWiaDevMgr::RegisterEventCallbackInterface, can receive it.
-                         */
+    // Возвращает значение параметра [wia] в виде текста (для журнала и строковых свойств).
+    //   setting - параметр из конфига.
+    std::wstring SettingText(const WiaSetting& setting)
+    {
+        switch (setting.kind)
+        {
+        case WiaSetting::Kind::Integer: return std::to_wstring(setting.integer);
+        case WiaSetting::Kind::Boolean: return setting.boolean ? L"true" : L"false";
+        default:                        return setting.text;
+        }
+    }
+
+    // Преобразует значение параметра [wia] к типу свойства устройства.
+    //   setting - параметр из конфига;
+    //   vt      - тип свойства на устройстве (VT_I4, VT_UI4, VT_R4, VT_BSTR, VT_CLSID, ...);
+    //   var     - [out] значение для WriteMultiple; вызывающий освобождает его PropVariantClear;
+    //   error   - [out] причина, если преобразовать нельзя.
+    bool MakeVariant(const WiaSetting& setting, VARTYPE vt, PROPVARIANT& var, std::wstring& error)
+    {
+        PropVariantInit(&var);
+        switch (vt)
+        {
+        case VT_I1: case VT_UI1: case VT_I2: case VT_UI2: case VT_I4: case VT_UI4:
+        case VT_INT: case VT_UINT: case VT_BOOL:
+        {
+            long value = 0;
+            if (setting.kind == WiaSetting::Kind::Integer)
+            {
+                value = static_cast<long>(setting.integer);
+            }
+            else if (setting.kind == WiaSetting::Kind::Boolean)
+            {
+                value = setting.boolean ? 1 : 0;
+            }
+            else if (!wianames::ParseIntegerValue(setting.text, value))
+            {
+                error = L"'" + setting.text + L"' is not a number or known WIA constant";
+                return false;
+            }
+            var.vt = vt;
+            switch (vt)
+            {
+            case VT_I1:   var.cVal = static_cast<CHAR>(value);   break;
+            case VT_UI1:  var.bVal = static_cast<UCHAR>(value);  break;
+            case VT_I2:   var.iVal = static_cast<SHORT>(value);  break;
+            case VT_UI2:  var.uiVal = static_cast<USHORT>(value); break;
+            case VT_I4:   var.lVal = value;                      break;
+            case VT_UI4:  var.ulVal = static_cast<ULONG>(value); break;
+            case VT_INT:  var.intVal = value;                    break;
+            case VT_UINT: var.uintVal = static_cast<UINT>(value); break;
+            default:      var.boolVal = value ? VARIANT_TRUE : VARIANT_FALSE; break;
+            }
+            return true;
+        }
+
+        case VT_R4:
+        case VT_R8:
+        {
+            double value = 0;
+            if (setting.kind == WiaSetting::Kind::Integer)
+            {
+                value = static_cast<double>(setting.integer);
+            }
+            else if (setting.kind == WiaSetting::Kind::Boolean)
+            {
+                value = setting.boolean ? 1.0 : 0.0;
+            }
+            else
+            {
+                std::wstring text = strutil::Trim(setting.text);
+                for (wchar_t& c : text)
+                {
+                    if (c == L',') c = L'.';    // "8,5" как в старом конфиге
+                }
+                wchar_t* end = nullptr;
+                value = wcstod(text.c_str(), &end);
+                long integer = 0;
+                if (text.empty() || end == nullptr || *end != L'\0')
+                {
+                    if (!wianames::ParseIntegerValue(text, integer))
                     {
-                        /* eventStr = pDevCaps[i].bstrName;
-                         * rasa
-                         * if (mfcElements.comboBoxEvents) mfcElements.comboBoxEvents->AddString(eventStr);
-                         */
-                        cWIA_Device.btn_event_name = bstr_to_u32(p_dev_caps[i].bstrName);
-
-                        LOG_SAVE << "bstrName" << event_str;
-                        // eventStr = pDevCaps[i].bstrCommandline;
-                        // eventStr = pDevCaps[i].bstrDescription;
-                        // eventStr = pDevCaps[i].bstrIcon;
-
-                        OLECHAR* guid_string;
-                        StringFromCLSID(p_dev_caps[i].guid, &guid_string);
-                        event_str = guid_string;
-                        LOG_SAVE << "guidString" << event_str;
-                        cWIA_Device.event_guid = event_str;
-
-                        /* ensure memory is freed */
-                        ::CoTaskMemFree(guid_string);
-
-                        if(!cWIA_Device.device_guid.empty())
-                            act_events.push_back(cWIA_Device);
-
-                        cWIA_Device.btn_event_name.clear();
-                        cWIA_Device.event_guid.clear();
+                        error = L"'" + setting.text + L"' is not a number";
+                        return false;
                     }
+                    value = integer;
                 }
             }
+            var.vt = vt;
+            if (vt == VT_R4) var.fltVal = static_cast<float>(value); else var.dblVal = value;
+            return true;
         }
 
-        pWiaPropertyStorage->Release();
-        pWiaPropertyStorage = nullptr;
-    }
+        case VT_BSTR:
+            var.vt = VT_BSTR;
+            var.bstrVal = SysAllocString(SettingText(setting).c_str());
+            return var.bstrVal != NULL;
 
-    return hr;
+        case VT_CLSID:
+        {
+            GUID guid;
+            if (setting.kind != WiaSetting::Kind::String || !wianames::ParseFormatGuid(setting.text, guid))
+            {
+                error = L"'" + SettingText(setting) + L"' is not a GUID or WiaImgFmt_ name";
+                return false;
+            }
+            var.vt = VT_CLSID;
+            var.puuid = static_cast<CLSID*>(CoTaskMemAlloc(sizeof(CLSID)));  // Освобождается PropVariantClear
+            if (var.puuid == NULL)
+            {
+                var.vt = VT_EMPTY;
+                return false;
+            }
+            *var.puuid = guid;
+            return true;
+        }
+
+        default:
+            error = L"property type " + std::to_wstring(vt) + L" is not supported";
+            return false;
+        }
+    }
 }
 
-HRESULT Crus1scan::get_from_device(IWiaDevMgr* pWiaDevMgr, const BSTR bstr_device_id, IWiaItem** ppWiaDevice) {
+// Выставляет WIA-свойства из секции [wia] конфига перед сканированием.
+// Для каждого параметра определяется, у кого есть это свойство - у элемента сканирования
+// (разрешение, цветность, область) или у корневого элемента (свойства устройства,
+// например выбор автоподатчика), и какого оно типа; значение из конфига приводится
+// к этому типу (число, константы через |, дробное, строка, GUID) и записывается.
+// Ошибки только пишутся в журнал - сканирование продолжается с остальными настройками.
+//   rootItem - корневой элемент устройства;
+//   item     - элемент, с которого будет сканирование;
+//   wiaProps - параметры из секции [wia].
+void CRus1scan::ApplyWiaProperties(IWiaItem* rootItem, IWiaItem* item, const WiaPropList& wiaProps)
+{
+    CComQIPtr<IWiaPropertyStorage> itemProps(item);
+    CComQIPtr<IWiaPropertyStorage> rootProps(rootItem);
 
-    if (nullptr == pWiaDevMgr || nullptr == bstr_device_id || nullptr == ppWiaDevice)
-        return E_INVALIDARG;
+    for (const auto& setting : wiaProps)
+    {
+        const std::wstring name = wianames::PropertyName(setting.propId);
+        const std::wstring label = L"[wia] " + setting.key + L" (" + name + L", " + std::to_wstring(setting.propId) +
+                                   L") = '" + SettingText(setting) + L"'";
 
-    /* Initialize out variables */
-    *ppWiaDevice = nullptr;
+        if (setting.propId == WIA_IPA_FORMAT || setting.propId == WIA_IPA_TYMED)
+        {
+            LOG_SAVE << label << ": ignored - set by rus1scan for the transfer";
+            continue;
+        }
 
-    /* Create the WIA Device */
-    const HRESULT hr = pWiaDevMgr->CreateDevice(bstr_device_id, ppWiaDevice);
+        IWiaPropertyStorage* target = NULL;
+        VARTYPE vt = VT_EMPTY;
+        const wchar_t* where = L"";
+        if (ReadPropertyType(itemProps, setting.propId, vt))
+        {
+            target = itemProps;
+            where = L"item";
+        }
+        else if (rootProps != itemProps && ReadPropertyType(rootProps, setting.propId, vt))
+        {
+            target = rootProps;
+            where = L"device";
+        }
+        if (target == NULL)
+        {
+            LOG_SAVE << label << ": not supported by this device - skipped";
+            continue;
+        }
 
-    LOG_SAVE << pWiaDevMgr << "GetFromDevice";
-    LOG_SAVE << bstr_device_id;
-    LOG_SAVE << ppWiaDevice;
+        PROPVARIANT var;
+        std::wstring error;
+        if (!MakeVariant(setting, vt, var, error))
+        {
+            LOG_SAVE << label << ": " << error << " - skipped";
+            continue;
+        }
+
+        PROPSPEC spec;
+        spec.ulKind = PRSPEC_PROPID;
+        spec.propid = setting.propId;
+        const HRESULT hr = target->WriteMultiple(1, &spec, &var, WIA_IPA_FIRST);
+        PropVariantClear(&var);
+
+        LOG_SAVE << label << " -> " << where << ": "
+                 << (SUCCEEDED(hr) ? std::string("ok") : rLogger::HrText(hr) + " (value not accepted by the device)");
+    }
+
+    // Область сканирования (WIA_IPS_XEXTENT/YEXTENT) задаётся в пикселях текущего
+    // разрешения и после смены разрешения не пересчитывается - при 150 DPI вместо
+    // 50 DPI сканировалась бы только треть стекла. Если разрешение менялось, а область
+    // в [wia] не задана, выставляем максимальную область от левого верхнего угла.
+    bool resolutionChanged = false;
+    bool extentGiven = false;
+    for (const auto& setting : wiaProps)
+    {
+        const unsigned long id = setting.propId;
+        resolutionChanged = resolutionChanged || id == WIA_IPS_XRES || id == WIA_IPS_YRES;
+        extentGiven = extentGiven || id == WIA_IPS_XEXTENT || id == WIA_IPS_YEXTENT ||
+                      id == WIA_IPS_XPOS || id == WIA_IPS_YPOS;
+    }
+    if (resolutionChanged && !extentGiven && itemProps != NULL)
+    {
+        WiaWrap::WritePropertyLong(itemProps, WIA_IPS_XPOS, 0);
+        WiaWrap::WritePropertyLong(itemProps, WIA_IPS_YPOS, 0);
+
+        const PROPID extents[2] = { WIA_IPS_XEXTENT, WIA_IPS_YEXTENT };
+        for (PROPID extent : extents)
+        {
+            LONG maxValue = 0;
+            const HRESULT hrRange = WiaWrap::ReadPropertyRangeMax(itemProps, extent, &maxValue);
+            const HRESULT hrWrite = SUCCEEDED(hrRange) ? WiaWrap::WritePropertyLong(itemProps, extent, maxValue) : hrRange;
+            LOG_SAVE << "Scan area property " << extent << " = " << maxValue << " (maximum): "
+                     << (SUCCEEDED(hrWrite) ? std::string("ok") : rLogger::HrText(hrWrite));
+        }
+    }
+}
+
+// Если у сканера выбран автоподатчик (ADF), разрешает сканирование всех листов из
+// лотка (WIA_DPS_PAGES = ALL_PAGES), иначе будет отсканирован только один лист.
+//   rootItem - корневой элемент устройства.
+void CRus1scan::EnableFeederAllPages(IWiaItem* rootItem)
+{
+    CComQIPtr<IWiaPropertyStorage> rootProps(rootItem);
+    if (rootProps == NULL)
+    {
+        return;
+    }
+
+    PROPSPEC spec;
+    spec.ulKind = PRSPEC_PROPID;
+    spec.propid = WIA_DPS_DOCUMENT_HANDLING_SELECT;
+
+    LONG handling = 0;
+    if (SUCCEEDED(WiaWrap::ReadPropertyLong(rootProps, &spec, &handling)) && (handling & FEEDER))
+    {
+        const HRESULT hr = WiaWrap::WritePropertyLong(rootProps, WIA_DPS_PAGES, ALL_PAGES);
+        LOG_SAVE << "Document feeder selected, WIA_DPS_PAGES=ALL_PAGES: " << rLogger::HrText(hr);
+    }
+}
+
+// Передаёт данные элемента в память (TYMED_CALLBACK, idtGetBandedData).
+// Формат передачи - WiaImgFmt_MEMORYBMP (поддерживается всеми сканерами для
+// TYMED_CALLBACK), при отказе - WiaImgFmt_BMP. Каждая страница превращается в
+// готовый .bmp-файл в памяти.
+//   item   - элемент, с которого сканируем;
+//   images - [out] полученные страницы.
+// Возвращает результат idtGetBandedData (S_OK / S_FALSE - отмена / код ошибки).
+HRESULT CRus1scan::TransferItem(IWiaItem* item, std::vector<ScannedImage>& images)
+{
+    CComQIPtr<IWiaPropertyStorage> props(item);
+    CComQIPtr<IWiaDataTransfer> transfer(item);
+    if (props == NULL || transfer == NULL)
+    {
+        LOG_SAVE << "Item does not support IWiaPropertyStorage/IWiaDataTransfer";
+        return E_NOINTERFACE;
+    }
+
+    HRESULT hr = WiaWrap::WritePropertyLong(props, WIA_IPA_TYMED, TYMED_CALLBACK);
+    if (FAILED(hr))
+    {
+        LOG_SAVE << "Setting WIA_IPA_TYMED=TYMED_CALLBACK failed: " << rLogger::HrText(hr);
+        return hr;
+    }
+
+    hr = WiaWrap::WritePropertyGuid(props, WIA_IPA_FORMAT, WiaImgFmt_MEMORYBMP);
+    if (FAILED(hr))
+    {
+        LOG_SAVE << "WiaImgFmt_MEMORYBMP rejected (" << rLogger::HrText(hr) << "), trying WiaImgFmt_BMP";
+        hr = WiaWrap::WritePropertyGuid(props, WIA_IPA_FORMAT, WiaImgFmt_BMP);
+        if (FAILED(hr))
+        {
+            LOG_SAVE << "Setting WIA_IPA_FORMAT failed: " << rLogger::HrText(hr);
+            return hr;
+        }
+    }
+
+    PROPSPEC bufferSpec;
+    bufferSpec.ulKind = PRSPEC_PROPID;
+    bufferSpec.propid = WIA_IPA_BUFFER_SIZE;
+    LONG bufferSize = 0;
+    if (FAILED(WiaWrap::ReadPropertyLong(props, &bufferSpec, &bufferSize)) || bufferSize <= 0)
+    {
+        bufferSize = 64 * 1024;
+    }
+
+    WiaWrap::CComPtrArray<IStream> streams;
+    LONG lastLoggedPercent = -100;
+    CComPtr<WiaWrap::CDataCallback> callback(
+        new WiaWrap::CDataCallback(TransferProgress, &lastLoggedPercent, &streams.Count(), &streams));
+
+    WIA_DATA_TRANSFER_INFO info = {};
+    info.ulSize = sizeof(info);
+    info.ulBufferSize = static_cast<ULONG>(2 * bufferSize);
+    info.bDoubleBuffer = TRUE;
+
+    LOG_SAVE << "idtGetBandedData started, buffer=" << info.ulBufferSize;
+    hr = transfer->idtGetBandedData(&info, callback);
+    LOG_SAVE << "idtGetBandedData finished: " << rLogger::HrText(hr) << ", pages=" << streams.Count();
 
     if (FAILED(hr))
-        LOG_SAVE << "Error calling IWiaDevMgr::CreateDevice";
-
-    return hr;
-}
-
-HRESULT Crus1scan::create_wia_device_manager(IWiaDevMgr** ppWiaDevMgr) {
-
-    if (nullptr == ppWiaDevMgr)
-        return E_INVALIDARG;
-
-    /* Initialize out variables */
-    *ppWiaDevMgr = nullptr;
-
-    /* Create an instance of the device manager */
-    const HRESULT hr = CoCreateInstance(CLSID_WiaDevMgr, nullptr, CLSCTX_LOCAL_SERVER, IID_IWiaDevMgr, reinterpret_cast<void**>(ppWiaDevMgr));
-    if (FAILED(hr))
-        LOG_SAVE << "CoCreateInstance failed on CLSID_WiaDevMgr";
-
-    return hr;
-}
-
-HRESULT Crus1scan::get_wia_prop_dev_id(IWiaPropertyStorage* pWiaPropertyStorage) {
-
-    if (nullptr == pWiaPropertyStorage)
-        return E_INVALIDARG;
-
-    /* Declare PROPSPECs and PROPVARIANTs, and initialize them to zero */
-    PROPSPEC prop_spec[3] = {};
-    PROPVARIANT prop_var[3] = {};
-
-    /* How many properties are we querying for? */
-    constexpr ULONG property_count = std::size(prop_spec);
-
-    // Define which properties we want to read: Device ID.
-    // This is what we'd use to create the device.
-    prop_spec[0].ulKind = PRSPEC_PROPID;
-    prop_spec[0].propid = WIA_DIP_DEV_ID;
-
-    /* Device name */
-    prop_spec[1].ulKind = PRSPEC_PROPID;
-    prop_spec[1].propid = WIA_DIP_DEV_NAME;
-
-    /* Device description */
-    prop_spec[2].ulKind = PRSPEC_PROPID;
-    prop_spec[2].propid = WIA_DIP_DEV_DESC;
-
-    /* property values */
-    const HRESULT hr = pWiaPropertyStorage->ReadMultiple(property_count, prop_spec, prop_var);
-    if (SUCCEEDED(hr)) {
-        /* IWiaPropertyStorage::ReadMultiple will return S_FALSE if some
-         * properties could not be read, so we have to check the return
-         * types for each requested item.
-		 */
-
-        /* return type for the device ID */
-        if (VT_BSTR == prop_var[0].vt) {
-            LOG_SAVE << "WIA_DIP_DEV_ID: " << prop_var[0].bstrVal;
-        }
-
-        /* return type for the device name */
-        if (VT_BSTR == prop_var[1].vt) {
-            LOG_SAVE << "WIA_DIP_DEV_NAME: " << prop_var[1].bstrVal;
-        }
-
-        /* return type for the device description */
-        if (VT_BSTR == prop_var[2].vt) {
-            LOG_SAVE << "WIA_DIP_DEV_DESC: " << prop_var[2].bstrVal;
-        }
-
-        /* Free the returned PROPVARIANTs */
-        FreePropVariantArray(property_count, prop_var);
+    {
+        return hr;
     }
-    else {
-        LOG_SAVE << "Error calling IWiaPropertyStorage::ReadMultiple";
+
+    for (LONG i = 0; i < streams.Count(); ++i)
+    {
+        IStream* stream = streams[i];
+        if (stream == NULL)
+        {
+            continue;
+        }
+
+        STATSTG stat = {};
+        if (FAILED(stream->Stat(&stat, STATFLAG_NONAME)) || stat.cbSize.QuadPart == 0 ||
+            stat.cbSize.QuadPart > 0x7FFFFFFF)
+        {
+            LOG_SAVE << "Page " << i << ": invalid stream size";
+            continue;
+        }
+
+        ScannedImage image;
+        image.bmp.resize(static_cast<size_t>(stat.cbSize.QuadPart));
+
+        LARGE_INTEGER zero = {};
+        stream->Seek(zero, STREAM_SEEK_SET, NULL);
+        ULONG read = 0;
+        if (FAILED(stream->Read(image.bmp.data(), static_cast<ULONG>(image.bmp.size()), &read)) ||
+            read != image.bmp.size())
+        {
+            LOG_SAVE << "Page " << i << ": stream read failed";
+            continue;
+        }
+
+        const BITMAPFILEHEADER* fileHeader = reinterpret_cast<const BITMAPFILEHEADER*>(image.bmp.data());
+        if (image.bmp.size() < sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) ||
+            fileHeader->bfType != MAKEWORD('B', 'M'))
+        {
+            LOG_SAVE << "Page " << i << ": data is not a BMP image";
+            continue;
+        }
+
+        LOG_SAVE << "Page " << i << ": " << image.bmp.size() << " bytes";
+        images.push_back(std::move(image));
     }
 
     return hr;
 }
 
-HRESULT Crus1scan::enumerate_items(IWiaItem* pWiaItem) {
-    LOG_SAVE << "Enumerating WIA Items: " << pWiaItem;
-    
-    if (nullptr == pWiaItem)
-        return E_INVALIDARG;
-
-    /* Get the item type for this item */
-    LONG l_item_type = 0;
-    HRESULT hr = pWiaItem->GetItemType(&l_item_type);
-
-    LOG_SAVE << "Item Type is:" << l_item_type;
-
-    /* If this is an image - transfer it */
-    if (l_item_type & WiaItemTypeImage) {
-        LOG_SAVE << "Item Type is Image:" << l_item_type;
-////////////////////////////////////////////////////////////////////////////////////////////////
-//TODO: hr = TransferWiaItem(pWiaItem);
-        hr = S_OK;
-////////////////////////////////////////////////////////////////////////////////////////////////    
+// Функция хода передачи для CDataCallback: пишет прогресс в журнал с шагом 25%.
+//   lStatus          - статус устройства (IT_STATUS_...);
+//   lPercentComplete - процент выполнения;
+//   pParam           - указатель на LONG с последним записанным в журнал процентом.
+// Всегда возвращает S_OK (передача без интерфейса не отменяется).
+HRESULT CALLBACK CRus1scan::TransferProgress(LONG lStatus, LONG lPercentComplete, PVOID pParam)
+{
+    LONG* lastLogged = static_cast<LONG*>(pParam);
+    if (lastLogged != NULL && (lPercentComplete >= *lastLogged + 25 || lPercentComplete < *lastLogged))
+    {
+        *lastLogged = lPercentComplete;
+        LOG_SAVE << "Transfer progress " << lPercentComplete << "% (status " << lStatus << ")";
     }
-    // if ( lItemType & WiaItemTypeFolder || lItemType & WiaItemTypeHasAttachments)
-    // If it is a folder and has no attachments (e.g. photos in a smartphone), enumerate its children 
-    if (!(l_item_type & WiaItemTypeHasAttachments)) {
-        LOG_SAVE << "Item Type is Folder. Enumerating children of " << l_item_type;
-
-        /* Get the child item enumerator for this item */
-        IEnumWiaItem* pEnumWiaItem = nullptr;
-        hr = pWiaItem->EnumChildItems(&pEnumWiaItem);
-        if (SUCCEEDED(hr)) {
-            // We will loop until we get an error or pEnumWiaItem->Next returns
-            // S_FALSE to signal the end of the list.
-            while (S_OK == hr) {
-                // Get the next child item
-                IWiaItem* pChildWiaItem = nullptr;
-                hr = pEnumWiaItem->Next(1, &pChildWiaItem, nullptr);
-
-                // pEnumWiaItem->Next will return S_FALSE when the list is
-                // exhausted, so check for S_OK before using the returned value.
-                if (S_OK == hr) {
-                    wia_get_events(pWiaItem);
-
-                	/* recurse into this item */
-                    hr = enumerate_items(pChildWiaItem);
-
-                    /* Release this item */
-                    pChildWiaItem->Release();
-                    pChildWiaItem = nullptr;
-                }
-                else if (FAILED(hr))
-                    LOG_SAVE << "Error calling pEnumWiaItem->Next";
-            }
-
-            /* If the result of the enumeration is S_FALSE, since this is normal, we will change it to S_OK */
-            if (S_FALSE == hr)
-                hr = S_OK;
-
-            /* Release the enumerator */
-            pEnumWiaItem->Release();
-            pEnumWiaItem = nullptr;
-        }
-    }
-    return  hr;
+    return S_OK;
 }
-
-HRESULT Crus1scan::transfer_image(IWiaItem* pWiaItem) {
-    LOG_SAVE << pWiaItem;
-    
-    if (nullptr == pWiaItem)
-        return E_INVALIDARG;
-
-    /* Get the item type for this item */
-    LONG lItemType = 0;
-    HRESULT hr = pWiaItem->GetItemType(&lItemType);
-
-    /* If this is an image, transfer it */
-    if (lItemType & WiaItemTypeImage) {
-        LOG_SAVE << lItemType;
-        // TODO: //////////////////////////////////////////////////////////////////////////////////////////////
-        hr = transfer_wia_item(pWiaItem);
-        hr = S_OK;
-        ////////////////////////////////////////////////////////////////////////////////////////////////    
-    }
-    return  hr;
-}
-
-HRESULT Crus1scan::create_wia_dev(IWiaDevMgr* pWiaDevMgr, IWiaPropertyStorage* pWiaPropertyStorage) {
-
-    if (nullptr == pWiaPropertyStorage)
-        return E_INVALIDARG;
-
-    /* Declare PROPSPECs and PROPVARIANTs, and initialize them to zero */
-    PROPSPEC prop_spec[1] = {};
-    PROPVARIANT prop_var[1] = {};
-
-    /*/ How many properties are we querying for? */
-    constexpr ULONG property_count = std::size(prop_spec);
-
-    // Define which properties we want to read.  We want the
-    // device ID, so we can create the device.
-    prop_spec[0].ulKind = PRSPEC_PROPID;
-    prop_spec[0].propid = WIA_DIP_DEV_ID;
-
-    /* the property values */
-    HRESULT hr = pWiaPropertyStorage->ReadMultiple(property_count, prop_spec, prop_var);
-    if (SUCCEEDED(hr)) { 
-        /* Check the return type for the device ID to make sure this property was actually read */
-//      if (VT_BSTR == PropVar[0].vt)
-        { 
-            // Create the WIA device, which results in obtaining the root IWiaItem
-            IWiaItem* pWiaRootItem = nullptr;
-            hr = get_from_device(pWiaDevMgr, prop_var[0].bstrVal, &pWiaRootItem);
-            if (SUCCEEDED(hr)) {
-                LOG_SAVE << "Reading buttons WiaGetEvents(pWiaRootItem)";
-
-//                WiaGetEvents(pWiaRootItem);
-                // Recursively enumerate the items
-                // (This function will also do some stuff with each item)
- //               LOG_SAVE << "EnumerateItems(pWiaRootItem)";
- // TODO: ////////////////////////////////////////////////////////////////////////////////////////////// 
-                  hr = enumerate_items(pWiaRootItem);                                    // 09.10.2023 TRANSFER IS rasa
-//                hr = TransferImage(pWiaRootItem);                                      // 31.07.2024 TRANSFER IS rasa
-//                WiaWrap::CComPtrArray<IStream> ppStream;
-//                hr = WiaWrap::WiaGetEvents(mfcElements, StiDeviceTypeDefault, 0, WIA_INTENT_NONE, pWiaDevMgr, pWiaRootItem, nullptr,
-//                                           nullptr, nullptr, &ppStream.Count(), &ppStream);
-                // Free the root item
-                pWiaRootItem->Release();
-                pWiaRootItem = nullptr;
-            }
-            else {
-                LOG_SAVE << "Error calling CreateWiaDevice";
-            }
-      }
-
-        /* Free the returned PROPVARIANTs */
-       FreePropVariantArray(property_count, prop_var);
-    }
-    else {
-        LOG_SAVE << "Error calling IWiaPropertyStorage::ReadMultiple";
-    }
-
-    /* Return the result of all of this */
-    return hr;
-}
-
-HRESULT Crus1scan::enumerate_wia_devices(IWiaDevMgr* pWiaDevMgr) {
-    if (nullptr == pWiaDevMgr)
-        return E_INVALIDARG;
-
-    IEnumWIA_DEV_INFO* pWiaEnumDevInfo = nullptr;
-    HRESULT hr = pWiaDevMgr->EnumDeviceInfo(WIA_DEVINFO_ENUM_LOCAL, &pWiaEnumDevInfo);
-    
-    if (SUCCEEDED(hr)) {
-        /* Reset the device enumerator to the beginning of the list */
-        hr = pWiaEnumDevInfo->Reset();
-        if (SUCCEEDED(hr)) {
-            // We will loop until we get an error or pWiaEnumDevInfo->Next returns
-            // S_FALSE to signal the end of the list.
-            while (S_OK == hr) {
-                /* Get the next device's property storage interface pointer */
-                IWiaPropertyStorage* pWiaPropertyStorage = nullptr;
-                hr = pWiaEnumDevInfo->Next(1, &pWiaPropertyStorage, nullptr);
-
-                // pWiaEnumDevInfo->Next will return S_FALSE when the list is
-                // exhausted, so check for S_OK before using the returned value.
-                if (hr == S_OK) {
-                    // Read the device's IWiaPropertyStorage*
-                    LOG_SAVE << "Getting WIA devices names to create them:";
-                    get_wia_prop_dev_id(pWiaPropertyStorage);
-                    LOG_SAVE << "ReadWiaProperties(pWiaPropertyStorage);";
-
-                    // Call a helper function to create the device and get buttons
-                    create_wia_dev(pWiaDevMgr, pWiaPropertyStorage);
-
-                    // Release the device's IWiaPropertyStorage*
-                    pWiaPropertyStorage->Release();
-                    pWiaPropertyStorage = nullptr;
-                }
-                else if (FAILED(hr)) {
-                    LOG_SAVE << "Error calling pWiaEnumDevInfo->Next";
-                }
-            }
-
-            // If the result of the enumeration is S_FALSE, since this
-            // is normal, we will change it to S_OK.
-            if (S_FALSE == hr) {
-                hr = S_OK;
-            }
-        }
-        else {
-            LOG_SAVE << "Error calling IEnumWIA_DEV_INFO::Reset()";
-        }
-
-        // Release the enumerator
-        pWiaEnumDevInfo->Release();
-        pWiaEnumDevInfo = nullptr;
-    }
-    else {
-        LOG_SAVE << "Error calling IWiaDevMgr::EnumDeviceInfo";
-    }
-
-    /* Return the result of the enumeration */
-    return hr;
-}
-
-Crus1scan::~Crus1scan(void) { }
