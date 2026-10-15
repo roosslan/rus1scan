@@ -15,3 +15,7 @@ _backup_*/
 
 # Библиотеки Boost больше не используются
 lib/libboost_*.lib
+
+# Пакеты CI
+dist/
+package.ddf

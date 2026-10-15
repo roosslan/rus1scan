@@ -1,7 +1,7 @@
-"""Генерирует wia_names_table.inc - таблицы имён WIA для секции [wia] в rus1scan.toml.
+"""Генерирует src/wia_names_table.inc - таблицы имён WIA для секции [wia] в rus1scan.toml.
 
 Источники:
-  - WIA_CONSTANTS.TXT.H из папки проекта (справочник, на который ссылается конфиг);
+  - src/WIA_CONSTANTS.TXT.H из директории проекта (справочник, на который ссылается конфиг);
   - WiaDef.h из Windows SDK (полный набор; в WIA_CONSTANTS.TXT.H часть файла обрезана).
 
 Свойство WIA - это макрос NAME с числовым значением, для которого есть пара NAME_STR
@@ -55,7 +55,7 @@ def resolve_int(name, defines, depth=0):
 
 def main():
     sdk = sys.argv[1] if len(sys.argv) > 1 else find_sdk_wiadef()
-    sources = [os.path.join(PROJECT, 'WIA_CONSTANTS.TXT.H')]
+    sources = [os.path.join(PROJECT, 'src', 'WIA_CONSTANTS.TXT.H')]
     if sdk and os.path.exists(sdk):
         sources.append(sdk)
     else:
@@ -83,7 +83,7 @@ def main():
         if value is not None and -2**31 <= value < 2**32:
             values[name] = value
 
-    out = os.path.join(PROJECT, 'wia_names_table.inc')
+    out = os.path.join(PROJECT, 'src', 'wia_names_table.inc')
     with open(out, 'w', encoding='utf-8', newline='\r\n') as f:
         f.write('// wia_names_table.inc: таблицы имён WIA для секции [wia] в rus1scan.toml.\n')
         f.write('// СГЕНЕРИРОВАНО tools\\gen_wia_names.py из ' +

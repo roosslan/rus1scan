@@ -21,41 +21,42 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="actions.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="config.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="EventCallback.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="logger.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="rus1scan.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="rus1scanService.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="rus1scanWindow.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="service_core.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="StdAfx.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="strutil.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="toml_lite.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="BitmapUtil.cpp"><Filter>WiaWrap</Filter></ClCompile>
-    <ClCompile Include="DataCallback.cpp"><Filter>WiaWrap</Filter></ClCompile>
-    <ClCompile Include="wia_names.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="WiaWrap.cpp"><Filter>WiaWrap</Filter></ClCompile>
-    <ClCompile Include="share\litePDF.cpp"><Filter>litePDF</Filter></ClCompile>
+    <ClCompile Include="src\actions.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\config.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\EventCallback.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\logger.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\rus1scan.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\rus1scanService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\rus1scanWindow.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\service_core.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\StdAfx.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\strutil.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\toml_lite.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\BitmapUtil.cpp"><Filter>WiaWrap</Filter></ClCompile>
+    <ClCompile Include="src\DataCallback.cpp"><Filter>WiaWrap</Filter></ClCompile>
+    <ClCompile Include="src\wia_names.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\WiaWrap.cpp"><Filter>WiaWrap</Filter></ClCompile>
+    <ClCompile Include="src\share\litePDF.cpp"><Filter>litePDF</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="actions.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="config.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="EventCallback.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="logger.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="resource.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="rus1scan.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="rus1scanService.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="rus1scanWindow.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="service_core.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="stdafx.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="strutil.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="toml_lite.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="BitmapUtil.h"><Filter>WiaWrap</Filter></ClInclude>
-    <ClInclude Include="DataCallback.h"><Filter>WiaWrap</Filter></ClInclude>
-    <ClInclude Include="wia_names.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="WiaWrap.h"><Filter>WiaWrap</Filter></ClInclude>
-    <ClInclude Include="share\litePDF.h"><Filter>litePDF</Filter></ClInclude>
+    <ClInclude Include="src\actions.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\config.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\EventCallback.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\logger.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\resource.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\rus1scan.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\rus1scanService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\rus1scanWindow.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\service_core.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\stdafx.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\strutil.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\toml_lite.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\version.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\BitmapUtil.h"><Filter>WiaWrap</Filter></ClInclude>
+    <ClInclude Include="src\DataCallback.h"><Filter>WiaWrap</Filter></ClInclude>
+    <ClInclude Include="src\wia_names.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="src\WiaWrap.h"><Filter>WiaWrap</Filter></ClInclude>
+    <ClInclude Include="src\share\litePDF.h"><Filter>litePDF</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="rus1scan.rc"><Filter>Resource Files</Filter></ResourceCompile>
@@ -63,7 +64,7 @@
   <ItemGroup>
     <None Include="res\rus1scan.rc2"><Filter>Resource Files</Filter></None>
     <None Include="rus1scan.toml" />
-    <None Include="wia_names_table.inc" />
+    <None Include="src\wia_names_table.inc" />
     <None Include="tools\gen_wia_names.py" />
   </ItemGroup>
   <ItemGroup>
