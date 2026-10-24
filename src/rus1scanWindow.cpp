@@ -5,6 +5,7 @@
 #include "rus1scanWindow.h"
 #include "actions.h"
 #include "strutil.h"
+#include "version.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -171,7 +172,8 @@ void CRus1scanWindow::OnSysCommand(UINT nID, LPARAM lParam)
 {
     if ((nID & 0xFFF0) == IDM_ABOUT)
     {
-        MessageBoxW(L"rus1scan - scanner buttons for Windows (WIA)\n(c) 2009-2026 www.alabuga.dev/rus1scan",
+        MessageBoxW(L"rus1scan " _CRT_WIDE(RUS1SCAN_VERSION_STRING) L" - scanner buttons for Windows (WIA)\n"
+                    L"(c) 2009-2026 www.alabuga.dev/rus1scan",
                     L"About rus1scan", MB_OK | MB_ICONINFORMATION);
     }
     else

@@ -45,13 +45,13 @@ printer = ''                      # для print; '' - принтер по ум�
 program = ''                      # для start; %1 - путь к файлу
 ```
 
-В секции `[wia]` ключом может быть любое свойство из `WIA_CONSTANTS.TXT.H`
+В секции `[wia]` ключом может быть любое свойство из `src/WIA_CONSTANTS.TXT.H`
 (имя, отображаемое имя или номер). Значение — число, `true`/`false`, константа
 WIA (несколько — через `|`), дробное число или текст; оно приводится к типу
 свойства конкретного сканера. Если задано разрешение без области сканирования,
 сканируется всё стекло.
 
-Таблица имён WIA формируется из `WIA_CONSTANTS.TXT.H` и `WiaDef.h` (Windows SDK):
+Таблица имён WIA (`src/wia_names_table.inc`) формируется из `src/WIA_CONSTANTS.TXT.H` и `WiaDef.h` (Windows SDK):
 
 ```
 python tools\gen_wia_names.py
@@ -59,9 +59,40 @@ python tools\gen_wia_names.py
 
 ## Сборка
 
+Исходники лежат в `src/`, тесты — в `tests/`, генератор таблицы имён WIA — в `tools/`.
+
 Visual Studio 2022 (v143), MFC, конфигурации Debug/Release для Win32
-(`litePDF.dll` — 32-битная). После сборки рядом с exe копируются `litePDF.dll`
-и, если его там нет, шаблон `rus1scan.toml`.
+(`litePDF.dll` — 32-битная). В Release MFC и CRT подключены статически, поэтому
+`rus1scan.exe` не требует VC++ Redistributable. После сборки рядом с exe
+копируются `litePDF.dll` и, если его там нет, шаблон `rus1scan.toml`.
+
+Версия задаётся в `src/version.h` (MAJOR.MINOR); номер сборки передаётся свойством
+`/p:Rus1scanBuild=N`, при локальной сборке он равен 0.
+
+## Тесты
+
+Проект `tests\rus1scan_tests.vcxproj` входит в `rus1scan.sln`. Проверяются разбор
+TOML, чтение и запись конфига, строковые функции, имена WIA, сохранение в GIF/BMP/PDF
+и, с параметром `--exe`, работа готового `rus1scan.exe` в режиме `/process`:
+
+```
+msbuild rus1scan.sln /p:Configuration=Release /p:Platform=x86
+Release\rus1scan_tests.exe --exe Release\rus1scan.exe
+```
+
+## CI и релизы
+
+GitHub Actions (`.github/workflows/ci.yml`) на каждый push и pull request собирает
+Release, запускает тесты и упаковывает в CAB-архив `rus1scan-<версия>-win32.cab`
+файлы `rus1scan.exe`, `litePDF.dll`, `rus1scan.toml`, `readme.md` и
+`WIA_CONSTANTS.TXT.H` (рядом — контрольная сумма `.sha256`). После каждого push в
+`trunk` автоматически публикуется релиз с тегом `v<MAJOR>.<MINOR>.<номер запуска CI>`.
+
+Для распаковки архива необходимо выполнить:
+
+```
+expand -F:* rus1scan-<версия>-win32.cab <директория>
+```
 
 ## Журнал
 

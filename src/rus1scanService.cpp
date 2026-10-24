@@ -9,6 +9,7 @@
 #include "actions.h"
 #include "config.h"
 #include "strutil.h"
+#include "version.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -157,7 +158,7 @@ namespace
         }
 
         ReportServiceStatus(SERVICE_START_PENDING, 0, 5000);
-        LOG_SAVE << "Service starting, exe: " << strutil::GetModulePath();
+        LOG_SAVE << "Service starting, version " << RUS1SCAN_VERSION_STRING << ", exe: " << strutil::GetModulePath();
 
 #ifdef _DEBUG
         for (DWORD i = 1; i < argc; ++i)

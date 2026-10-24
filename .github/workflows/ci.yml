@@ -1,0 +1,125 @@
+# Сборка, тесты и релизы rus1scan.
+# push/PR: сборка Release Win32, тесты, cab-пакет в артефактах.
+# push в trunk: то же самое + автоматический релиз на GitHub с тегом vMAJOR.MINOR.<номер запуска>
+# (MAJOR.MINOR - из src/version.h, номер запуска CI - номер сборки в версии exe).
+
+name: CI
+
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Сборка и тесты (Win32)
+    runs-on: windows-2022
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Версия
+        id: version
+        shell: pwsh
+        run: |
+          $major = (Select-String -Path src\version.h -Pattern 'RUS1SCAN_VERSION_MAJOR\s+(\d+)').Matches[0].Groups[1].Value
+          $minor = (Select-String -Path src\version.h -Pattern 'RUS1SCAN_VERSION_MINOR\s+(\d+)').Matches[0].Groups[1].Value
+          $v = "$major.$minor.${{ github.run_number }}"
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Версия: $v"
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Сборка
+        run: msbuild rus1scan.sln /m /nologo /p:Configuration=Release /p:Platform=x86 /p:Rus1scanBuild=${{ github.run_number }}
+
+      - name: Тесты
+        shell: pwsh
+        run: |
+          .\Release\rus1scan_tests.exe --exe "$PWD\Release\rus1scan.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Проверка версии exe
+        shell: pwsh
+        run: |
+          $actual = (Get-Item .\Release\rus1scan.exe).VersionInfo.FileVersion
+          if ($actual -ne '${{ steps.version.outputs.version }}') {
+            Write-Error "Версия exe $actual не совпадает с ${{ steps.version.outputs.version }}"
+            exit 1
+          }
+
+      # ------------------------------------------------------------------
+      # Пакет CAB (LZX:21, системный makecab.exe); файлы лежат в нём
+      # в директории rus1scan-<версия>.
+      # ------------------------------------------------------------------
+      - name: Пакет CAB
+        shell: pwsh
+        run: |
+          $v = '${{ steps.version.outputs.version }}'
+          $pkg = "rus1scan-$v-win32"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $ddf = @(
+            '.OPTION EXPLICIT'
+            ".Set CabinetNameTemplate=$pkg.cab"
+            '.Set DiskDirectoryTemplate=dist'
+            '.Set Cabinet=on'
+            '.Set Compress=on'
+            '.Set CompressionType=LZX'
+            '.Set CompressionMemory=21'
+            '.Set MaxDiskSize=0'
+            '.Set RptFileName=NUL'
+            '.Set InfFileName=NUL'
+            ".Set DestinationDir=rus1scan-$v"
+            '"Release\rus1scan.exe"'
+            '"Release\litePDF.dll"'
+            '"rus1scan.toml"'
+            '"readme.md"'
+            '"src\WIA_CONSTANTS.TXT.H"'
+          )
+          $ddf | Set-Content -Encoding ascii package.ddf
+          makecab.exe /F package.ddf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $hash = (Get-FileHash "dist/$pkg.cab" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $pkg.cab" | Out-File -Encoding ascii "dist/$pkg.cab.sha256"
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rus1scan-${{ steps.version.outputs.version }}-win32
+          path: |
+            dist/*.cab
+            dist/*.sha256
+
+  # --------------------------------------------------------------------
+  # Автоматический релиз после каждого push в trunk
+  # --------------------------------------------------------------------
+  release:
+    name: Релиз
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/trunk'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: rus1scan-${{ needs.build.outputs.version }}-win32
+          path: dist
+
+      - name: Создание релиза
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -lah dist
+          gh release create "v${{ needs.build.outputs.version }}" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "rus1scan ${{ needs.build.outputs.version }}" \
+            --generate-notes

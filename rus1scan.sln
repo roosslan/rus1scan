@@ -1,9 +1,11 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.7.34031.279
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rus1scan", "rus1scan.vcxproj", "{6673DB72-B7F0-497A-BCFF-3554BD02D0DE}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rus1scan_tests", "tests\rus1scan_tests.vcxproj", "{3E8F0C52-6A1B-4D27-9C4E-7B2A5D1F8E63}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{6673DB72-B7F0-497A-BCFF-3554BD02D0DE}.Debug|x86.Build.0 = Debug|Win32
 		{6673DB72-B7F0-497A-BCFF-3554BD02D0DE}.Release|x86.ActiveCfg = Release|Win32
 		{6673DB72-B7F0-497A-BCFF-3554BD02D0DE}.Release|x86.Build.0 = Release|Win32
+		{3E8F0C52-6A1B-4D27-9C4E-7B2A5D1F8E63}.Debug|x86.ActiveCfg = Debug|Win32
+		{3E8F0C52-6A1B-4D27-9C4E-7B2A5D1F8E63}.Debug|x86.Build.0 = Debug|Win32
+		{3E8F0C52-6A1B-4D27-9C4E-7B2A5D1F8E63}.Release|x86.ActiveCfg = Release|Win32
+		{3E8F0C52-6A1B-4D27-9C4E-7B2A5D1F8E63}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
